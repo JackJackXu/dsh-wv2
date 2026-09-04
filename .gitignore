@@ -4,5 +4,8 @@ obj/
 *.user
 .vs/
 
+# Publish / build output
+dist/
+
 # Logs / temp
 *.log
