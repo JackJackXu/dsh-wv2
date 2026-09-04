@@ -6,7 +6,6 @@
         Width="1280" Height="840"
         MinWidth="900" MinHeight="600"
         WindowStartupLocation="CenterScreen"
-        Icon="Assets/whale.ico"
         Background="#1A1A1A"
         Closing="Window_Closing">
     <Grid>
