@@ -24,7 +24,6 @@ public partial class MainWindow
         WireHotKey();
         WireWake();
         StartTaskNotifications();
-        WireDomNotifications();
         Closed += (_, _) =>
         {
             UnregisterHotKey();
@@ -156,6 +155,7 @@ public partial class MainWindow
         {
             _notifWatcher = new Services.SessionWatcher(dir);
             _notifWatcher.TurnEnd += OnTurnEnd;
+            _notifWatcher.ApprovalAsked += OnApprovalAsked;
             _notifWatcher.Start();
             Closed += (_, _) => _notifWatcher?.Stop();
         }
@@ -222,6 +222,16 @@ public partial class MainWindow
                 ? (message.Length > 0 ? message : "有一个工具请求需要批准")
                 : (message.Length > 0 ? message : "有一个问题等待你回答");
             _tray?.ShowBalloonTip(5000, head, body, System.Windows.Forms.ToolTipIcon.Warning);
+        });
+    }
+
+    private void OnApprovalAsked(string toolName, string reason)
+    {
+        if (!_settings.NotificationsEnabled) return;
+        Dispatcher.InvokeAsync(() =>
+        {
+            string body = reason.Length > 0 ? reason : ("有一个工具请求需要批准");
+            _tray?.ShowBalloonTip(6000, "需要你的审批：" + toolName, body, System.Windows.Forms.ToolTipIcon.Warning);
         });
     }
 

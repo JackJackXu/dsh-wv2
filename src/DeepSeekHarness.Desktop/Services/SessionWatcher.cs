@@ -14,6 +14,7 @@ namespace DeepSeekHarness.Desktop.Services;
 public sealed class SessionWatcher
 {
     public event Action<string, string>? TurnEnd; // title, body
+    public event Action<string, string>? ApprovalAsked; // toolName, reason
 
     private const uint ZstdMagic = 4247762216; // 28 B5 2F FD
     private readonly string _sessionsDir;
@@ -240,6 +241,7 @@ public sealed class SessionWatcher
         }
 
         int turnEnds = 0, assistantMessages = 0;
+        var approvals = new List<(string tool, string reason)>();
         long consumed = readFrom;
         foreach (var (s, e) in frames)
         {
@@ -262,12 +264,18 @@ public sealed class SessionWatcher
                     if (et == "turn/start" || et == "turn/end") rec.HasTurnEvents = true;
                     if (et == "turn/end") turnEnds++;
                     if (et == "assistant/message") assistantMessages++;
+                    if (et == "approval/asked") approvals.Add((Str(ev, "toolName") ?? "tool", Str(ev, "reason") ?? ""));
                 }
             }
             consumed = readFrom + e;
         }
         rec.Consumed = consumed;
         rec.Size = size;
+
+        // New tool approvals needing the user (skip subagent noise).
+        if (rec.DelegationDepth == 0)
+            foreach (var (tool, reason) in approvals)
+                ApprovalAsked?.Invoke(tool, reason);
 
         int count = rec.HasTurnEvents ? turnEnds : assistantMessages;
         if (count > 0) Emit(rec, count);
