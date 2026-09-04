@@ -55,6 +55,9 @@ public partial class LogViewerWindow : Window
 
     private void Refresh()
     {
+        // LevelFilter's SelectionChanged fires during XAML load, before LogBox
+        // exists; guard so an early refresh is a no-op until the UI is built.
+        if (LogBox is null) return;
         LogBox.Text = BuildText();
     }
 
