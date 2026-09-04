@@ -5,8 +5,10 @@ obj/
 .vs/
 
 # Publish / build output
-dist*/
+release/
 dist/
+dist-new/
+dist-v3/
 
 # Logs / temp
 *.log
