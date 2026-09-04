@@ -72,6 +72,8 @@ public sealed class DshProcess : IDisposable
         psi.ArgumentList.Add("--port");
         psi.ArgumentList.Add(lastPort > 0 ? lastPort.ToString() : "0");
         psi.ArgumentList.Add("--no-open");
+        psi.ArgumentList.Add("--trusted-host");
+        psi.ArgumentList.Add("127.0.0.1");
 
         try
         {

@@ -22,6 +22,7 @@ public partial class MainWindow : Window
     private bool _intentionalStop; // suppress exit-notice during manual restart
     private ToolStripMenuItem? _loginItem;
     private Services.SessionWatcher? _notifWatcher;
+    private Services.MuxWatcher? _mux;
     partial void ShellReady();
 
     public MainWindow()
@@ -90,6 +91,7 @@ public partial class MainWindow : Window
             webView.CoreWebView2.Navigate(url);
             Overlay.Visibility = Visibility.Collapsed;
             webView.Visibility = Visibility.Visible;
+            _ = StartMuxAsync(url);
         });
     }
 

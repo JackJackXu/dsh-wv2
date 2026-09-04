@@ -172,6 +172,53 @@ public partial class MainWindow
         });
     }
 
+    private async System.Threading.Tasks.Task StartMuxAsync(string httpUrl)
+    {
+        try
+        {
+            var baseUri = new Uri(httpUrl);
+            string origin = baseUri.GetLeftPart(UriPartial.Authority);
+            string token = "";
+            var q = baseUri.Query.TrimStart('?');
+            foreach (var pair in q.Split('&'))
+            {
+                var kv = pair.Split('=', 2);
+                if (kv.Length == 2 && kv[0] == "token") { token = System.Uri.UnescapeDataString(kv[1]); break; }
+            }
+
+            var cookieParts = new System.Collections.Generic.List<string>();
+            try
+            {
+                var cookies = await webView.CoreWebView2.CookieManager.GetCookiesAsync(origin);
+                foreach (var c in cookies) if (c.Name.Contains("dsh-auth")) cookieParts.Add(c.Name + "=" + c.Value);
+            }
+            catch (Exception ex) { App.Log("mux cookie: " + ex.Message); }
+            string cookie = string.Join("; ", cookieParts);
+
+            _mux?.Stop();
+            _mux = new Services.MuxWatcher(origin, token, cookie.Length > 0 ? cookie : null);
+            _mux.Attention += OnAttention;
+            _mux.Start();
+            App.Log("mux started for " + origin + (cookie.Length > 0 ? " (cookie ok)" : " (no cookie)"));
+        }
+        catch (Exception ex) { App.Log("mux start: " + ex.Message); }
+    }
+
+    private void OnAttention(string kind, string title, string message)
+    {
+        if (!_settings.NotificationsEnabled) return;
+        Dispatcher.InvokeAsync(() =>
+        {
+            string head = kind == "approval"
+                ? "需要你的审批：" + title
+                : "需要你回答" + (title.Length > 0 ? "「" + title + "」" : "");
+            string body = kind == "approval"
+                ? (message.Length > 0 ? message : "有一个工具请求需要批准")
+                : (message.Length > 0 ? message : "有一个问题等待你回答");
+            _tray?.ShowBalloonTip(5000, head, body, System.Windows.Forms.ToolTipIcon.Warning);
+        });
+    }
+
     [DllImport("user32.dll")]
     private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
     [DllImport("user32.dll")]
