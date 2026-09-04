@@ -5,7 +5,7 @@
         Title="DeepSeek Harness Desktop Client - Powered by C#/WPF on WebView2"
         Width="1280" Height="840"
         MinWidth="900" MinHeight="600"
-        WindowStartupLocation="CenterScreen"
+        WindowStartupLocation="Manual"
         Background="#1A1A1A"
         Closing="Window_Closing">
     <Grid>

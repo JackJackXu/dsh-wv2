@@ -5,6 +5,7 @@ obj/
 .vs/
 
 # Publish / build output
+dist*/
 dist/
 
 # Logs / temp

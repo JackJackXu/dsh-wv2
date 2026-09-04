@@ -19,6 +19,8 @@ public partial class MainWindow : Window
     private NotifyIcon? _tray;
     private bool _quitting;
     private bool _webReady;
+    private bool _intentionalStop; // suppress exit-notice during manual restart
+    private ToolStripMenuItem? _loginItem;
     partial void ShellReady();
 
     public MainWindow()
@@ -27,6 +29,7 @@ public partial class MainWindow : Window
         ApplyBounds();
         Title = FullName;
         Loaded += OnLoaded;
+        StateChanged += (_, _) => CaptureBounds();
         Closed += (_, _) => { _dsh.Dispose(); _tray?.Dispose(); };
     }
 
@@ -81,6 +84,7 @@ public partial class MainWindow : Window
         Dispatcher.InvokeAsync(() =>
         {
             if (!_webReady) return;
+            _intentionalStop = false;
             try { _settings.LastPort = new Uri(url).Port; _settings.Save(); } catch { /* ignore */ }
             webView.CoreWebView2.Navigate(url);
             Overlay.Visibility = Visibility.Collapsed;
@@ -96,7 +100,7 @@ public partial class MainWindow : Window
 
     private void OnDshExited(int code)
     {
-        if (_quitting) return;
+        if (_quitting || _intentionalStop) return;
         App.Log("dsh service exited: " + code);
         Dispatcher.InvokeAsync(() =>
         {
@@ -124,7 +128,9 @@ public partial class MainWindow : Window
         m.Items.Add("打开日志目录", null, (_, _) => OpenFolder(Path.Combine(_settingsDir, "logs")));
         m.Items.Add("打开终端（会话目录）", null, (_, _) => OpenTerminal());
         m.Items.Add(new ToolStripSeparator());
-        m.Items.Add("开机自启", null, (_, _) => ToggleLaunchAtLogin());
+        _loginItem = new ToolStripMenuItem("开机自启") { Checked = _settings.LaunchAtLogin };
+        _loginItem.Click += (_, _) => ToggleLaunchAtLogin();
+        m.Items.Add(_loginItem);
         m.Items.Add("关于", null, (_, _) => ShowAbout());
         m.Items.Add(new ToolStripSeparator());
         m.Items.Add("退出", null, (_, _) => Quit());
@@ -151,6 +157,7 @@ public partial class MainWindow : Window
             Overlay.Visibility = Visibility.Visible;
             webView.Visibility = Visibility.Collapsed;
             StatusText.Text = "正在重启 dsh 服务…";
+            _intentionalStop = true;
             _dsh.Stop();
             _dsh.Start(_settings.LastPort);
         });
@@ -175,6 +182,7 @@ public partial class MainWindow : Window
         catch (Exception ex) { App.Log("login item: " + ex.Message); }
         _settings.LaunchAtLogin = next;
         _settings.Save();
+        if (_loginItem is not null) _loginItem.Checked = next;
         _tray?.ShowBalloonTip(2000, "DSH WV2", next ? "已开启开机自启" : "已关闭开机自启", ToolTipIcon.Info);
     }
 
@@ -194,6 +202,7 @@ public partial class MainWindow : Window
         try { SystemEvents.PowerModeChanged -= OnPowerModeChanged; } catch { /* ignore */ }
         try { _tray?.Dispose(); _tray = null; } catch { /* ignore */ }
         try { _dsh.Stop(); } catch { /* ignore */ }
+        CaptureBounds();
         try { _settings.Save(); } catch { /* ignore */ }
         Environment.Exit(0);
     }
