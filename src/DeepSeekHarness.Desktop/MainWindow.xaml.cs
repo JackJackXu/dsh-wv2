@@ -19,6 +19,7 @@ public partial class MainWindow : Window
     private NotifyIcon? _tray;
     private bool _quitting;
     private bool _webReady;
+    partial void ShellReady();
 
     public MainWindow()
     {
@@ -72,6 +73,7 @@ public partial class MainWindow : Window
         _webReady = true;
         StatusText.Text = "正在拉起 dsh 服务…";
         _dsh.Start(_settings.LastPort);
+        ShellReady();
     }
 
     private void OnUrlResolved(string url)
@@ -120,6 +122,7 @@ public partial class MainWindow : Window
         m.Items.Add(new ToolStripSeparator());
         m.Items.Add("打开数据目录", null, (_, _) => OpenFolder(_settingsDir));
         m.Items.Add("打开日志目录", null, (_, _) => OpenFolder(Path.Combine(_settingsDir, "logs")));
+        m.Items.Add("打开终端（会话目录）", null, (_, _) => OpenTerminal());
         m.Items.Add(new ToolStripSeparator());
         m.Items.Add("开机自启", null, (_, _) => ToggleLaunchAtLogin());
         m.Items.Add("关于", null, (_, _) => ShowAbout());
