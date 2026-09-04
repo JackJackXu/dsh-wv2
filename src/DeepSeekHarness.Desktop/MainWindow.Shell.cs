@@ -164,11 +164,10 @@ public partial class MainWindow
     private void OnTurnEnd(string title, string body)
     {
         if (!_settings.NotificationsEnabled) return;
+        // Always notify on task completion (front window or not). ShowBalloonTip
+        // must run on the UI thread; OnTurnEnd fires from the watcher thread.
         Dispatcher.InvokeAsync(() =>
         {
-            // Notify only when the user isn't looking at the window.
-            bool visibleActive = IsVisible && IsActive;
-            if (visibleActive) return;
             _tray?.ShowBalloonTip(4000, "任务完成：" + title, string.IsNullOrEmpty(body) ? "点击查看" : body, System.Windows.Forms.ToolTipIcon.Info);
         });
     }
