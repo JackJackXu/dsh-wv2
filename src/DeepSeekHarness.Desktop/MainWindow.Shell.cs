@@ -186,14 +186,19 @@ public partial class MainWindow
                 if (kv.Length == 2 && kv[0] == "token") { token = System.Uri.UnescapeDataString(kv[1]); break; }
             }
 
-            var cookieParts = new System.Collections.Generic.List<string>();
+            // Obtain the HttpOnly dsh-auth cookie via the token->303 handshake
+            // (WebView2's CookieManager did not return it reliably). GET
+            // /?token=... -> 303 + Set-Cookie: dsh-auth-...=JWT.
+            string cookie = "";
             try
             {
-                var cookies = await webView.CoreWebView2.CookieManager.GetCookiesAsync(origin);
-                foreach (var c in cookies) if (c.Name.Contains("dsh-auth")) cookieParts.Add(c.Name + "=" + c.Value);
+                using var hc = new System.Net.Http.HttpClient(new System.Net.Http.HttpClientHandler { AllowAutoRedirect = false });
+                using var resp = await hc.GetAsync(origin + "/?token=" + System.Uri.EscapeDataString(token));
+                if (resp.Headers.TryGetValues("Set-Cookie", out var sc))
+                    cookie = string.Join("; ", sc.Select(c => c.Split(';')[0]));
+                if (cookie.Length == 0) App.Log("mux: no Set-Cookie on " + resp.StatusCode);
             }
-            catch (Exception ex) { App.Log("mux cookie: " + ex.Message); }
-            string cookie = string.Join("; ", cookieParts);
+            catch (Exception ex) { App.Log("mux cookie handshake: " + ex.Message); }
 
             _mux?.Stop();
             _mux = new Services.MuxWatcher(origin, token, cookie.Length > 0 ? cookie : null);

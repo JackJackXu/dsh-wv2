@@ -52,6 +52,7 @@ public sealed class MuxWatcher
                 await ws.ConnectAsync(new Uri(_wsUrl), _cts.Token);
                 attempt = 0;
                 var buf = new byte[16384];
+                try { DeepSeekHarness.Desktop.App.Log("mux connected: " + _wsUrl); } catch { }
                 while (ws.State == WebSocketState.Open)
                 {
                     using var ms = new MemoryStream();
@@ -65,7 +66,7 @@ public sealed class MuxWatcher
                         ProcessMessage(Encoding.UTF8.GetString(ms.ToArray()));
                 }
             }
-            catch { /* reconnect below */ }
+            catch (Exception ex) { try { DeepSeekHarness.Desktop.App.Log("mux connect: " + ex.Message); } catch { } }
             if (_cts.IsCancellationRequested) break;
             int delay = Math.Min(30000, 5000 * (1 << Math.Min(attempt, 4)));
             attempt++;
