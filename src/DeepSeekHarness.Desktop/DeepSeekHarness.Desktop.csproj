@@ -12,6 +12,10 @@
     <ApplicationIcon>Assets\whale.ico</ApplicationIcon>
     <Product>DeepSeek Harness Desktop Client - Powered by C#/WPF on WebView2</Product>
     <AssemblyTitle>DSH WV2</AssemblyTitle>
+    <Version>1.0.0</Version>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+    <InformationalVersion>1.0.0</InformationalVersion>
   </PropertyGroup>
 
   <ItemGroup>

@@ -21,8 +21,8 @@ public partial class MainWindow : Window
     private bool _webReady;
     private bool _intentionalStop; // suppress exit-notice during manual restart
     private ToolStripMenuItem? _loginItem;
+    private ToolStripMenuItem? _notifItem;
     private Services.SessionWatcher? _notifWatcher;
-    private Services.MuxWatcher? _mux;
     partial void ShellReady();
 
     public MainWindow()
@@ -130,6 +130,9 @@ public partial class MainWindow : Window
         m.Items.Add("打开日志目录", null, (_, _) => OpenFolder(Path.Combine(_settingsDir, "logs")));
         m.Items.Add("打开终端（会话目录）", null, (_, _) => OpenTerminal());
         m.Items.Add(new ToolStripSeparator());
+        _notifItem = new ToolStripMenuItem("通知") { Checked = _settings.NotificationsEnabled };
+        _notifItem.Click += (_, _) => ToggleNotifications();
+        m.Items.Add(_notifItem);
         _loginItem = new ToolStripMenuItem("开机自启") { Checked = _settings.LaunchAtLogin };
         _loginItem.Click += (_, _) => ToggleLaunchAtLogin();
         m.Items.Add(_loginItem);
@@ -169,6 +172,14 @@ public partial class MainWindow : Window
     {
         try { Directory.CreateDirectory(dir); Process.Start(new ProcessStartInfo("explorer.exe", dir) { UseShellExecute = true }); }
         catch (Exception ex) { App.Log("open folder: " + ex.Message); }
+    }
+
+    private void ToggleNotifications()
+    {
+        _settings.NotificationsEnabled = !_settings.NotificationsEnabled;
+        _settings.Save();
+        if (_notifItem is not null) _notifItem.Checked = _settings.NotificationsEnabled;
+        _tray?.ShowBalloonTip(2000, "DSH WV2", _settings.NotificationsEnabled ? "通知已开启" : "通知已关闭", ToolTipIcon.Info);
     }
 
     private void ToggleLaunchAtLogin()

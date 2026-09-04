@@ -10,7 +10,7 @@ public partial class App : System.Windows.Application
     private Mutex? _mutex;
 
     private static readonly string LogDir =
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DSH WV2");
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DSH WV2", "logs");
     private static readonly string CrashLog = Path.Combine(LogDir, "error.log");
 
     protected override void OnStartup(StartupEventArgs e)

@@ -13,6 +13,7 @@ namespace DeepSeekHarness.Desktop.Services;
 public sealed class DshProcess : IDisposable
 {
     private Process? _proc;
+    private bool _urlResolved;
 
     public event Action<string>? UrlResolved; // full URL incl. token
     public event Action<string>? Failed;      // user-facing error text
@@ -88,20 +89,32 @@ public sealed class DshProcess : IDisposable
 
         _proc.BeginOutputReadLine();
         _proc.BeginErrorReadLine();
+        _urlResolved = false;
+        _ = StartTimeout(20_000);
         _proc.OutputDataReceived += (_, e) =>
         {
             if (string.IsNullOrEmpty(e.Data)) return;
             var m = Regex.Match(e.Data, @"dsh web: (\S+)");
-            if (m.Success) UrlResolved?.Invoke(m.Groups[1].Value);
+            if (m.Success) { _urlResolved = true; UrlResolved?.Invoke(m.Groups[1].Value); }
         };
         _proc.ErrorDataReceived += (_, e) =>
         {
-            if (!string.IsNullOrEmpty(e.Data)) Trace.WriteLine("[dsh stderr] " + e.Data);
+            if (!string.IsNullOrEmpty(e.Data)) App.Log("dsh stderr: " + e.Data);
         };
     }
 
+    private async System.Threading.Tasks.Task StartTimeout(int ms)
+    {
+        await System.Threading.Tasks.Task.Delay(ms);
+        if (!_urlResolved && !_stopped)
+            Failed?.Invoke("dsh 服务启动超时：20 秒内未收到服务地址，请检查 dsh 是否安装/可用。");
+    }
+
+    private bool _stopped = false;
+
     public void Stop()
     {
+        _stopped = true;
         if (_proc is { HasExited: false })
         {
             try { _proc.Kill(true); } catch { /* already dead */ }
