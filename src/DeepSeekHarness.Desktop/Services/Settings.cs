@@ -13,6 +13,11 @@ public sealed class Settings
     public int LastPort { get; set; }
     public int Width { get; set; } = 1280;
     public int Height { get; set; } = 840;
+    public int? X { get; set; }
+    public int? Y { get; set; }
+    public bool Maximized { get; set; }
+    public bool LaunchAtLogin { get; set; }
+    public bool NotificationsEnabled { get; set; } = true;
 
     public static Settings Load()
     {

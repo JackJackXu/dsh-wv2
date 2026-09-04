@@ -16,6 +16,7 @@ public sealed class DshProcess : IDisposable
 
     public event Action<string>? UrlResolved; // full URL incl. token
     public event Action<string>? Failed;      // user-facing error text
+    public event Action<int>? ProcessExited;  // dsh service exited (code)
 
     public bool IsRunning => _proc is { HasExited: false };
 
@@ -82,6 +83,8 @@ public sealed class DshProcess : IDisposable
             return;
         }
         if (_proc is null) { Failed?.Invoke("启动 dsh 失败（进程未创建）"); return; }
+        _proc.EnableRaisingEvents = true;
+        _proc.Exited += (_, _) => { try { ProcessExited?.Invoke(_proc?.ExitCode ?? -1); } catch { /* ignore */ } };
 
         _proc.BeginOutputReadLine();
         _proc.BeginErrorReadLine();
