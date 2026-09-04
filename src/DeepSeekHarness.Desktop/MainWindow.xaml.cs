@@ -17,6 +17,8 @@ public partial class MainWindow : Window
     private readonly Settings _settings = Settings.Load();
     private readonly DshProcess _dsh = new();
     private NotifyIcon? _tray;
+    private Icon? _trayIcon;      // normal (whale)
+    private Icon? _trayAlertIcon; // "attention" variant used while flashing
     private bool _quitting;
     private bool _webReady;
     private bool _intentionalStop; // suppress exit-notice during manual restart
@@ -24,7 +26,6 @@ public partial class MainWindow : Window
     private DateTime _lastBoundsSave = DateTime.MinValue;
     private string? _pendingUrl;
     private System.Windows.Forms.Timer? _flashTimer;
-    private int _flashTicks;
     private ToolStripMenuItem? _loginItem;
     private ToolStripMenuItem? _notifItem;
     private Services.SessionWatcher? _notifWatcher;
@@ -41,6 +42,8 @@ public partial class MainWindow : Window
         StateChanged += (_, _) => CaptureBounds();
         LocationChanged += (_, _) => CaptureBoundsThrottled();
         SizeChanged += (_, _) => CaptureBoundsThrottled();
+        // B: stop tray flashing the moment the user focuses the window.
+        Activated += (_, _) => StopFlash();
         Closed += (_, _) => { _dsh.Dispose(); _tray?.Dispose(); };
     }
 
@@ -249,8 +252,10 @@ public partial class MainWindow : Window
         Icon? icon = null;
         var iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "whale.ico");
         try { if (File.Exists(iconPath)) icon = new Icon(iconPath); } catch { /* fall through */ }
+        _trayIcon = icon ?? SystemIcons.Application;
+        _trayAlertIcon = MakeAlertIcon(_trayIcon);
 
-        _tray = new NotifyIcon { Icon = icon ?? SystemIcons.Application, Visible = true, Text = "DSH WV2" };
+        _tray = new NotifyIcon { Icon = _trayIcon, Visible = true, Text = "DSH WV2" };
         // C: clicking any notification balloon brings the main window forward so
         // the user can see/act on the underlying task or approval.
         _tray.BalloonTipClicked += (_, _) => Dispatcher.InvokeAsync(ShowMain);
@@ -279,31 +284,52 @@ public partial class MainWindow : Window
     }
 
     // B: whenever something needs the user's attention (task finished, approval
-    // needed, dsh crashed) blink the tray icon WeChat-style. One uniform blink
-    // pattern is used for every kind of state — no per-type distinction.
-    private void Flash(int extraTicks = 8)
+    // needed, dsh crashed) blink the tray icon WeChat-style — by swapping between
+    // the normal and an "attention" icon (NOT hiding/showing, which would cancel
+    // a visible balloon). One uniform pattern for every kind of state. It keeps
+    // flashing until the window is focused (Activated -> StopFlash).
+    private void Flash()
     {
         if (_tray is null) return;
-        _flashTicks = Math.Max(_flashTicks, extraTicks);
+        // Already looking at the app? Nothing to attract.
+        if (IsActive) { StopFlash(); return; }
         if (_flashTimer is null)
         {
             _flashTimer = new System.Windows.Forms.Timer { Interval = 450 };
             _flashTimer.Tick += (_, _) => FlashTick();
-            _flashTimer.Start();
         }
+        if (!_flashTimer.Enabled) _flashTimer.Start();
     }
 
     private void FlashTick()
     {
         if (_tray is null) { StopFlash(); return; }
-        _tray.Visible = !_tray.Visible;
-        if (--_flashTicks <= 0) StopFlash();
+        _tray.Icon = ReferenceEquals(_tray.Icon, _trayAlertIcon) ? _trayIcon : _trayAlertIcon;
     }
 
     private void StopFlash()
     {
         if (_flashTimer is { Enabled: true }) _flashTimer.Stop();
-        if (_tray is not null) _tray.Visible = true; // always end "on"
+        if (_tray is not null && _tray.Icon != _trayIcon) _tray.Icon = _trayIcon;
+    }
+
+    // Build an "attention" whale (a small red badge) used while flashing.
+    private static Icon MakeAlertIcon(Icon baseIcon)
+    {
+        try
+        {
+            using var bmp = new Bitmap(baseIcon.ToBitmap(), 16, 16);
+            using (var g = System.Drawing.Graphics.FromImage(bmp))
+            using (var brush = new SolidBrush(Color.FromArgb(226, 27, 45)))
+            {
+                g.FillEllipse(brush, 11, 0, 5, 5); // top-right red dot
+            }
+            return System.Drawing.Icon.FromHandle(bmp.GetHicon());
+        }
+        catch
+        {
+            return SystemIcons.Application; // degenerate fallback
+        }
     }
 
     private void Retry_Click(object sender, RoutedEventArgs e)
