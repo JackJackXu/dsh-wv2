@@ -54,6 +54,37 @@ public sealed class DshProcess : IDisposable
         return null;
     }
 
+    // ----- dependency self-check (also reused by the "check dsh update" feature) -----
+    public static string? FindNodePath() => FindNode();
+    public static string? FindDshEntryPath() => FindDshEntry();
+
+    public static string? FindLocalDshVersion()
+    {
+        var entry = FindDshEntry();
+        if (entry is null) return null;
+        try
+        {
+            // entry = .../node_modules/@deepseek-ai/dsh/lib/bin.js
+            var pkgDir = Path.GetDirectoryName(Path.GetDirectoryName(entry));
+            var pkg = Path.Combine(pkgDir ?? "", "package.json");
+            if (!File.Exists(pkg)) return null;
+            using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(pkg));
+            if (doc.RootElement.TryGetProperty("version", out var v) && v.ValueKind == System.Text.Json.JsonValueKind.String)
+                return v.GetString();
+            return null;
+        }
+        catch { return null; }
+    }
+
+    private static bool LooksTooOld(string? version)
+    {
+        if (string.IsNullOrEmpty(version)) return false;
+        var m = Regex.Match(version, @"^(\d+)\.(\d+)");
+        if (!m.Success) return false;
+        int major = int.Parse(m.Groups[1].Value), minor = int.Parse(m.Groups[2].Value);
+        return major == 0 && minor == 0; // pre-0.1 was a different/older generation
+    }
+
     public void Start(int lastPort)
     {
         int gen = ++_generation;               // invalidate any prior process/events
@@ -68,6 +99,10 @@ public sealed class DshProcess : IDisposable
             Failed?.Invoke("未找到系统 node 或 dsh。请先安装：npm install -g @deepseek-ai/dsh");
             return;
         }
+        var localVer = FindLocalDshVersion();
+        App.Log("dsh local version: " + (localVer ?? "unknown"));
+        if (LooksTooOld(localVer))
+            App.Log("dsh version looks too old / incompatible: " + localVer);
 
         var psi = new ProcessStartInfo(node)
         {

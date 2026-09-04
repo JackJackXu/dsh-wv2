@@ -20,6 +20,8 @@ public sealed class SessionWatcher
     private readonly string _sessionsDir;
     private readonly Dictionary<string, Rec> _files = new();
     private readonly CancellationTokenSource _cts = new();
+    private readonly System.Threading.AutoResetEvent _changed = new(false);
+    private FileSystemWatcher? _fsw;
 
     private sealed class Rec
     {
@@ -34,7 +36,12 @@ public sealed class SessionWatcher
 
     public SessionWatcher(string sessionsDir) => _sessionsDir = sessionsDir;
 
-    public void Start(int intervalMs = 2000)
+    // F: incremental watching. A FileSystemWatcher signals a scan the moment a
+    // session log changes, while a slow fallback poll (default 15s) catches any
+    // event the watcher missed (e.g. watcher started before the dir existed).
+    // This replaces the old every-2s full re-enumeration to cut idle IO once
+    // there are many sessions. Start() drives the same Scan() that Poll() calls.
+    public void Start(int pollIntervalMs = 15000)
     {
         var t = new System.Threading.Thread(() =>
         {
@@ -42,15 +49,53 @@ public sealed class SessionWatcher
             try { System.Threading.Thread.Sleep(400); } catch { }
             while (!_cts.IsCancellationRequested)
             {
-                try { Scan(); } catch { /* keep watching */ }
-                try { System.Threading.Thread.Sleep(intervalMs); } catch { }
+                try { EnsureWatcher(); Scan(); } catch { /* keep watching */ }
+                _changed.WaitOne(pollIntervalMs);
             }
         });
         t.IsBackground = true;
         t.Start();
     }
 
-    public void Stop() => _cts.Cancel();
+    public void Stop()
+    {
+        _cts.Cancel();
+        try { _changed.Set(); } catch { /* ignore */ }
+        if (_fsw is not null)
+        {
+            try { _fsw.Dispose(); } catch { /* ignore */ }
+            _fsw = null;
+        }
+    }
+
+    private void EnsureWatcher()
+    {
+        if (_fsw is not null)
+        {
+            // The watched dir disappeared (deleted/recreated): drop and retry.
+            if (!Directory.Exists(_sessionsDir))
+            {
+                try { _fsw.Dispose(); } catch { /* ignore */ }
+                _fsw = null;
+            }
+            return;
+        }
+        if (!Directory.Exists(_sessionsDir)) return;
+        try
+        {
+            _fsw = new FileSystemWatcher(_sessionsDir)
+            {
+                IncludeSubdirectories = true,
+                Filter = "session.jsonl.zstd",
+                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.Size | NotifyFilters.DirectoryName,
+            };
+            _fsw.Changed += (_, _) => { try { _changed.Set(); } catch { /* ignore */ } };
+            _fsw.Created += (_, _) => { try { _changed.Set(); } catch { /* ignore */ } };
+            _fsw.Renamed += (_, _) => { try { _changed.Set(); } catch { /* ignore */ } };
+            _fsw.EnableRaisingEvents = true;
+        }
+        catch { /* watcher unavailable -> fall back to the slow poll */ }
+    }
 
     // Manual scan, exposed for tests (Start() drives the same Scan on a timer).
     public void Poll() => Scan();
