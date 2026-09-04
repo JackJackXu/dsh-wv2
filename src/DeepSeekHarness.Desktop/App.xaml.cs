@@ -76,9 +76,22 @@ public partial class App : System.Windows.Application
         try
         {
             Directory.CreateDirectory(LogDir);
-            File.AppendAllText(CrashLog, $"[{DateTime.Now:O}] {message}\n");
+            RotateIfLarge();
+            File.AppendAllText(CrashLog, $"[{DateTime.Now:O}] {message}" + System.Environment.NewLine);
         }
         catch { /* logging must never throw */ }
+    }
+
+    // Keep error.log bounded (~5MB): on overflow keep the recent half.
+    private static void RotateIfLarge()
+    {
+        var fi = new FileInfo(CrashLog);
+        if (!fi.Exists || fi.Length <= 5 * 1024 * 1024) return;
+        var all = File.ReadAllText(CrashLog);
+        int mid = all.Length / 2;
+        int start = all.IndexOf(System.Environment.NewLine, mid);
+        if (start < 0) start = mid;
+        File.WriteAllText(CrashLog, all.Substring(start + 1));
     }
 
     private static void TryShow(string text)

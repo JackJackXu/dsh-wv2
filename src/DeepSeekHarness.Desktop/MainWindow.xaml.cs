@@ -20,6 +20,8 @@ public partial class MainWindow : Window
     private bool _quitting;
     private bool _webReady;
     private bool _intentionalStop; // suppress exit-notice during manual restart
+    private bool _trayHintShown;
+    private DateTime _lastBoundsSave = DateTime.MinValue;
     private ToolStripMenuItem? _loginItem;
     private ToolStripMenuItem? _notifItem;
     private Services.SessionWatcher? _notifWatcher;
@@ -29,10 +31,25 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         ApplyBounds();
+        SyncLaunchAtLoginFromRegistry();
         Title = FullName;
         Loaded += OnLoaded;
         StateChanged += (_, _) => CaptureBounds();
+        LocationChanged += (_, _) => CaptureBoundsThrottled();
+        SizeChanged += (_, _) => CaptureBoundsThrottled();
         Closed += (_, _) => { _dsh.Dispose(); _tray?.Dispose(); };
+    }
+
+    // Trust the actual Windows startup entry over our persisted flag on boot.
+    private void SyncLaunchAtLoginFromRegistry()
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run");
+            _settings.LaunchAtLogin = key?.GetValue("DSH WV2") is not null;
+            _settings.Save();
+        }
+        catch (Exception ex) { App.Log("login sync: " + ex.Message); }
     }
 
     private static readonly string _settingsDir =
@@ -64,6 +81,15 @@ public partial class MainWindow : Window
         }
         else if (WindowState == WindowState.Maximized) _settings.Maximized = true;
         _settings.Save();
+    }
+
+    // Save geometry at most every ~600ms during a drag/resize (CaptureBounds
+    // writes a file each call; a drag fires hundreds of events).
+    private void CaptureBoundsThrottled()
+    {
+        if ((DateTime.Now - _lastBoundsSave).TotalMilliseconds < 600) return;
+        _lastBoundsSave = DateTime.Now;
+        CaptureBounds();
     }
 
     private async void OnLoaded(object? sender, RoutedEventArgs e)
@@ -98,15 +124,16 @@ public partial class MainWindow : Window
             _intentionalStop = false;
             try { _settings.LastPort = new Uri(url).Port; _settings.Save(); } catch { /* ignore */ }
             webView.CoreWebView2.Navigate(url);
-            Overlay.Visibility = Visibility.Collapsed;
-            webView.Visibility = Visibility.Visible;
+            webView.Visibility = Visibility.Visible; // render under the overlay
+            // (Overlay is hidden on NavigationCompleted success, not here, so
+            // there is no white-flash before the page actually renders)
         });
     }
 
     private void OnFailed(string msg)
     {
         App.Log("dsh failed: " + msg);
-        Dispatcher.InvokeAsync(() => StatusText.Text = msg);
+        Dispatcher.InvokeAsync(() => { StatusText.Text = msg; if (ErrorActions is not null) ErrorActions.Visibility = Visibility.Visible; });
     }
 
     private void OnDshExited(int code)
@@ -118,6 +145,7 @@ public partial class MainWindow : Window
             StatusText.Text = "dsh 服务已停止 (code " + code + ")。用托盘「重启服务」恢复。";
             Overlay.Visibility = Visibility.Visible;
             webView.Visibility = Visibility.Collapsed;
+            if (ErrorActions is not null) ErrorActions.Visibility = Visibility.Visible;
             _tray?.ShowBalloonTip(3000, "DSH WV2", "dsh 服务意外退出 (code " + code + ")。点托盘「重启服务」", ToolTipIcon.Warning);
         });
     }
@@ -150,6 +178,17 @@ public partial class MainWindow : Window
         m.Items.Add("退出", null, (_, _) => Quit());
         _tray.ContextMenuStrip = m;
         _tray.DoubleClick += (_, _) => ShowMain();
+    }
+
+    private void Retry_Click(object sender, RoutedEventArgs e)
+    {
+        if (ErrorActions is not null) ErrorActions.Visibility = Visibility.Collapsed;
+        RestartService();
+    }
+
+    private void OpenLog_Click(object sender, RoutedEventArgs e)
+    {
+        OpenFolder(Path.Combine(_settingsDir, "logs"));
     }
 
     public void ShowMain()
@@ -197,11 +236,19 @@ public partial class MainWindow : Window
         try
         {
             using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", true);
-            if (key is null) return;
+            if (key is null) throw new InvalidOperationException("无法打开 Run 键");
             if (next) key.SetValue("DSH WV2", "\"" + Environment.ProcessPath + "\"");
             else key.DeleteValue("DSH WV2", false);
         }
-        catch (Exception ex) { App.Log("login item: " + ex.Message); }
+        catch (Exception ex)
+        {
+            App.Log("login item toggle failed: " + ex.Message);
+            // Roll back the in-memory state so the checkbox doesn't lie.
+            _settings.LaunchAtLogin = !next;
+            if (_loginItem is not null) _loginItem.Checked = !next;
+            _tray?.ShowBalloonTip(3000, "DSH WV2", "开机自启设置失败：" + ex.Message, ToolTipIcon.Error);
+            return;
+        }
         _settings.LaunchAtLogin = next;
         _settings.Save();
         if (_loginItem is not null) _loginItem.Checked = next;
@@ -224,6 +271,7 @@ public partial class MainWindow : Window
         try { SystemEvents.PowerModeChanged -= OnPowerModeChanged; } catch { /* ignore */ }
         try { _tray?.Dispose(); _tray = null; } catch { /* ignore */ }
         try { _dsh.Stop(); } catch { /* ignore */ }
+        try { webView.Dispose(); } catch { /* ignore */ }
         CaptureBounds();
         try { _settings.Save(); } catch { /* ignore */ }
         Environment.Exit(0);
@@ -235,6 +283,11 @@ public partial class MainWindow : Window
         if (_quitting) return;
         e.Cancel = true;
         Hide();
+        if (!_trayHintShown)
+        {
+            _trayHintShown = true;
+            _tray?.ShowBalloonTip(2000, "DSH WV2", "已最小化到托盘，可随时从托盘打开或退出", ToolTipIcon.Info);
+        }
     }
 
     // ---------- WebView2 security hardening ----------
@@ -262,7 +315,12 @@ public partial class MainWindow : Window
             catch { args.Cancel = true; }
         };
 
-        cwv.NewWindowRequested += (_, args) => { args.Handled = true; OpenExternal(args.Uri); };
+        cwv.NewWindowRequested += (_, args) =>
+        {
+            args.Handled = true;
+            if (string.IsNullOrEmpty(args.Uri) || args.Uri == "about:blank") return;
+            OpenExternal(args.Uri);
+        };
 
         cwv.PermissionRequested += (_, args) =>
         {

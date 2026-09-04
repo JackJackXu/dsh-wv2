@@ -23,7 +23,6 @@ public sealed class SessionWatcher
 
     private sealed class Rec
     {
-        public long Size;
         public long Consumed;
         public string? Title;
         public string? Cwd;
@@ -250,7 +249,6 @@ public sealed class SessionWatcher
             catch { /* header damaged, retry next pass */ }
             rec.Consumed = readFrom + frames[^1].End;
             rec.Baseline = true;
-            rec.Size = size;
             return;
         }
 
@@ -284,7 +282,6 @@ public sealed class SessionWatcher
             consumed = readFrom + e;
         }
         rec.Consumed = consumed;
-        rec.Size = size;
 
         // New tool approvals needing the user (skip subagent noise).
         if (rec.DelegationDepth == 0)

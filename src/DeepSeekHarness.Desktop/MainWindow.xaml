@@ -12,9 +12,15 @@
         <wv2:WebView2 x:Name="webView" Visibility="Collapsed" />
         <Grid x:Name="Overlay" Background="#1A1A1A">
             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="520">
+                <ProgressBar IsIndeterminate="True" Width="200" Height="6" Margin="0,0,0,20" />
                 <TextBlock Text="正在启动 DeepSeek Harness…" FontSize="18" Foreground="#CFD8DC" HorizontalAlignment="Center" />
                 <TextBlock x:Name="StatusText" Margin="0,14,0,0" FontSize="12" Foreground="#8FA3AD"
                            HorizontalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center" />
+                <StackPanel x:Name="ErrorActions" Orientation="Horizontal" HorizontalAlignment="Center"
+                            Margin="0,18,0,0" Visibility="Collapsed">
+                    <Button x:Name="RetryBtn" Content="重试启动" Padding="14,5" Margin="0,0,10,0" Click="Retry_Click" />
+                    <Button Content="打开日志" Padding="14,5" Click="OpenLog_Click" />
+                </StackPanel>
             </StackPanel>
         </Grid>
     </Grid>

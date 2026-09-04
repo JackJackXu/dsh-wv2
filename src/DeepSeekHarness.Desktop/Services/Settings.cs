@@ -10,6 +10,10 @@ public sealed class Settings
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DSH WV2");
     private static readonly string SettingsFilePath = Path.Combine(Dir, "settings.json");
 
+    public const int SchemaVersion = 1;
+
+    public int SchemaVersionPersisted { get; set; }
+
     public int LastPort { get; set; }
     public int Width { get; set; } = 1280;
     public int Height { get; set; } = 840;
@@ -35,7 +39,9 @@ public sealed class Settings
         try
         {
             Directory.CreateDirectory(Dir);
-            File.WriteAllText(SettingsFilePath, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true }));
+            var copy = (Settings)MemberwiseClone();
+            copy.SchemaVersionPersisted = SchemaVersion;
+            File.WriteAllText(SettingsFilePath, JsonSerializer.Serialize(copy, new JsonSerializerOptions { WriteIndented = true }));
         }
         catch { /* non-fatal */ }
     }

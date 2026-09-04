@@ -55,7 +55,12 @@ public partial class MainWindow
 
         cwv.NavigationCompleted += (_, e) =>
         {
-            if (e.IsSuccess) { _recoveryTries = 0; return; }
+            if (e.IsSuccess)
+            {
+                _recoveryTries = 0;
+                Dispatcher.InvokeAsync(() => { Overlay.Visibility = System.Windows.Visibility.Collapsed; });
+                return;
+            }
             if (_recoveryTries >= 5)
             {
                 App.Log("navigation giving up after " + _recoveryTries + " tries");
