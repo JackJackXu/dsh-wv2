@@ -10,7 +10,7 @@
 
 ## 功能
 
-- **WebView2 原生壳**：复用系统 WebView2，不自带 Chromium（单文件 ~2.5MB，需已装 .NET 8 运行时）。
+- **WebView2 原生壳**：复用系统 WebView2，不自带 Chromium（主 exe ~2.5MB + 少量必要旁车文件如 WebView2Loader.dll，需已装 .NET 8 运行时）。
 - **自动起 dsh 服务**：复用系统 node + 全局 dsh（与开发版一致，共享 `~/.dsh`）；`--port 0 --no-open`，解析带 token 的 URL；WebView2 作为真浏览器自动完成 token→cookie 鉴权。
 - **托盘驻留**：关窗藏托盘；完整菜单：打开 / 重载 UI / 重启 dsh 服务 / 打开数据目录 / 打开日志目录 / 打开终端(会话目录) / 开机自启 / 关于 / 退出。
 - **任务完成通知**：轮询 `~/.dsh/sessions`（zstd 逐帧解压 JSONL），检测 `turn/end` → 托盘气泡（前台/托盘都弹）。
@@ -39,7 +39,7 @@ dotnet publish -c Release -r win-x64 --self-contained false -p:PublishSingleFile
 - Windows 10/11
 - **.NET 8 运行时**（构建需 .NET 8 SDK）
 - WebView2 Runtime（Win10/11 通常已装）
-- 系统 Node.js ≥ 22 + 全局 dsh（`npm install -g @deepseek-ai/dsh`）
+- 系统 Node.js ≥ 22.19（或 ≥24）+ 全局 dsh（`npm install -g @deepseek-ai/dsh`）
 
 ## 已知说明
 

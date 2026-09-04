@@ -2,20 +2,14 @@
 bin/
 obj/
 *.user
+*.suo
 .vs/
 
 # Publish / build output
 release/
-release-next/
-release-v2/
-release-v3/
-release-v4/
-release-v5/
-release-v6/
-
+release-*/
 dist/
-dist-new/
-dist-v3/
+dist-*/
 
 # Logs / temp
 *.log

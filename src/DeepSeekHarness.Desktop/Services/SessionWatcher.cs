@@ -133,6 +133,20 @@ public sealed class SessionWatcher
         return null;
     }
 
+    private static string? EventField(JsonElement o, string prop)
+    {
+        // dsh persists typed session events with the payload under "data" (e.g.
+        // approval/asked -> data.toolName / data.reason). Read there first, then
+        // fall back to the top level for other encodings.
+        if (o.ValueKind == JsonValueKind.Object
+            && o.TryGetProperty("data", out var d) && d.ValueKind == JsonValueKind.Object)
+        {
+            var v = Str(d, prop);
+            if (v != null) return v;
+        }
+        return Str(o, prop);
+    }
+
     private static int Int(JsonElement o, string prop)
     {
         if (o.ValueKind != JsonValueKind.Object) return 0;
@@ -264,7 +278,7 @@ public sealed class SessionWatcher
                     if (et == "turn/start" || et == "turn/end") rec.HasTurnEvents = true;
                     if (et == "turn/end") turnEnds++;
                     if (et == "assistant/message") assistantMessages++;
-                    if (et == "approval/asked") approvals.Add((Str(ev, "toolName") ?? "tool", Str(ev, "reason") ?? ""));
+                    if (et == "approval/asked") approvals.Add((EventField(ev, "toolName") ?? "tool", EventField(ev, "reason") ?? ""));
                 }
             }
             consumed = readFrom + e;

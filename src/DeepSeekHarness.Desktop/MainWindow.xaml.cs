@@ -72,7 +72,16 @@ public partial class MainWindow : Window
         _dsh.UrlResolved += OnUrlResolved;
         _dsh.Failed += OnFailed;
         _dsh.ProcessExited += OnDshExited;
-        try { await webView.EnsureCoreWebView2Async(); }
+        // Keep the WebView2 browser profile under our own app-data dir (not
+        // next to the exe): writeable even from Program Files, and stable
+        // across moves/updates. User-data stays off the exe directory.
+        try
+        {
+            var wv2Data = Path.Combine(_settingsDir, "WebView2");
+            Directory.CreateDirectory(wv2Data);
+            var env = await CoreWebView2Environment.CreateAsync(null, wv2Data);
+            await webView.EnsureCoreWebView2Async(env);
+        }
         catch (Exception ex) { StatusText.Text = "初始化 WebView2 失败：" + ex.Message; App.Log("webview init: " + ex); return; }
         ConfigureWebView(webView.CoreWebView2);
         _webReady = true;
@@ -143,7 +152,7 @@ public partial class MainWindow : Window
         _tray.DoubleClick += (_, _) => ShowMain();
     }
 
-    private void ShowMain()
+    public void ShowMain()
     {
         Show();
         if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
@@ -234,6 +243,9 @@ public partial class MainWindow : Window
         cwv.Settings.AreDevToolsEnabled = false;
         cwv.Settings.IsStatusBarEnabled = false;
         cwv.Settings.AreHostObjectsAllowed = false;
+        // No page <-> host messaging bridge is used; keep window.chrome.webview
+        // from being exposed at all (strict "no native bridge").
+        cwv.Settings.IsWebMessageEnabled = false;
 
         cwv.NavigationStarting += (_, args) =>
         {
@@ -262,7 +274,14 @@ public partial class MainWindow : Window
 
     private static void OpenExternal(string url)
     {
-        try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
+        try
+        {
+            var u = new Uri(url);
+            // Only hand web/mail links to the OS browser; never let page content
+            // trigger ms-settings:/file:/etc. via ShellExecute.
+            if (u.Scheme != Uri.UriSchemeHttp && u.Scheme != Uri.UriSchemeHttps && u.Scheme != "mailto") return;
+            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+        }
         catch { /* ignore */ }
     }
 }

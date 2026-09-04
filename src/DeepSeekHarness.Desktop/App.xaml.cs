@@ -7,7 +7,9 @@ namespace DeepSeekHarness.Desktop;
 public partial class App : System.Windows.Application
 {
     private const string MutexName = @"Local\DSH_WV2_SingleInstance";
+    private const string ActivateEventName = @"Local\DSH_WV2_Activate";
     private Mutex? _mutex;
+    private EventWaitHandle? _activate;
 
     private static readonly string LogDir =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DSH WV2", "logs");
@@ -28,7 +30,15 @@ public partial class App : System.Windows.Application
         };
 
         _mutex = new Mutex(true, MutexName, out bool createdNew);
-        if (!createdNew) { Shutdown(); return; }
+        if (!createdNew)
+        {
+            // Another instance is running: tell it to show/activate, then exit
+            // (instead of silently doing nothing, which looks broken).
+            try { EventWaitHandle.OpenExisting(ActivateEventName).Set(); } catch { /* ignore */ }
+            Shutdown();
+            return;
+        }
+        StartActivateListener();
 
         try
         {
@@ -42,6 +52,23 @@ public partial class App : System.Windows.Application
             TryShow("启动失败：\n" + ex);
             Shutdown();
         }
+    }
+
+    private void StartActivateListener()
+    {
+        _activate = new EventWaitHandle(false, EventResetMode.AutoReset, ActivateEventName);
+        var t = new System.Threading.Thread(() =>
+        {
+            while (_activate.WaitOne())
+            {
+                Dispatcher.BeginInvoke(() =>
+                {
+                    if (MainWindow is MainWindow win) win.ShowMain();
+                });
+            }
+        });
+        t.IsBackground = true;
+        t.Start();
     }
 
     internal static void Log(object message)
@@ -62,6 +89,7 @@ public partial class App : System.Windows.Application
     protected override void OnExit(ExitEventArgs e)
     {
         try { _mutex?.ReleaseMutex(); } catch { /* ignore */ }
+        try { _activate?.Dispose(); } catch { /* ignore */ }
         base.OnExit(e);
     }
 }

@@ -13,7 +13,7 @@ namespace DeepSeekHarness.Desktop.Services;
 public sealed class DshProcess : IDisposable
 {
     private Process? _proc;
-    private bool _urlResolved;
+    private int _generation = 0; // bumped on every Start/Stop; stale events filtered
 
     public event Action<string>? UrlResolved; // full URL incl. token
     public event Action<string>? Failed;      // user-facing error text
@@ -42,8 +42,8 @@ public sealed class DshProcess : IDisposable
         var rel = Path.Combine("node_modules", "@deepseek-ai", "dsh", "lib", "bin.js");
         var candidates = new[]
         {
-            Path.Combine(appdata, "npm", rel),       // npm default
-            Path.Combine(local, "pnpm", rel),        // pnpm setup
+            Path.Combine(appdata, "npm", rel),
+            Path.Combine(local, "pnpm", rel),
             Path.Combine(local, "Volta", "bin", rel),
         };
         foreach (var c in candidates) if (File.Exists(c)) return c;
@@ -52,6 +52,9 @@ public sealed class DshProcess : IDisposable
 
     public void Start(int lastPort)
     {
+        int gen = ++_generation;               // invalidate any prior process/events
+        _urlResolved = false;
+
         var node = FindNode();
         var entry = FindDshEntry();
         if (node is null || entry is null)
@@ -74,47 +77,50 @@ public sealed class DshProcess : IDisposable
         psi.ArgumentList.Add(lastPort > 0 ? lastPort.ToString() : "0");
         psi.ArgumentList.Add("--no-open");
 
-        try
-        {
-            _proc = Process.Start(psi);
-        }
-        catch (Exception ex)
-        {
-            Failed?.Invoke("启动 dsh 失败：" + ex.Message);
-            return;
-        }
-        if (_proc is null) { Failed?.Invoke("启动 dsh 失败（进程未创建）"); return; }
-        _proc.EnableRaisingEvents = true;
-        _proc.Exited += (_, _) => { try { ProcessExited?.Invoke(_proc?.ExitCode ?? -1); } catch { /* ignore */ } };
+        Process? proc;
+        try { proc = Process.Start(psi); }
+        catch (Exception ex) { Failed?.Invoke("启动 dsh 失败：" + ex.Message); return; }
+        if (proc is null) { Failed?.Invoke("启动 dsh 失败（进程未创建）"); return; }
+        _proc = proc;
 
-        _proc.BeginOutputReadLine();
-        _proc.BeginErrorReadLine();
-        _urlResolved = false;
-        _ = StartTimeout(20_000);
-        _proc.OutputDataReceived += (_, e) =>
+        proc.EnableRaisingEvents = true;
+        proc.Exited += (_, _) =>
         {
-            if (string.IsNullOrEmpty(e.Data)) return;
+            // Ignore a stale exit (old process killed during a restart) whose
+            // generation has already been superseded by a newer Start().
+            if (gen != _generation || !ReferenceEquals(_proc, proc)) return;
+            try { ProcessExited?.Invoke(proc.ExitCode); } catch { /* ignore */ }
+        };
+
+        proc.BeginOutputReadLine();
+        proc.BeginErrorReadLine();
+        proc.OutputDataReceived += (_, e) =>
+        {
+            if (gen != _generation || string.IsNullOrEmpty(e.Data)) return;
             var m = Regex.Match(e.Data, @"dsh web: (\S+)");
             if (m.Success) { _urlResolved = true; UrlResolved?.Invoke(m.Groups[1].Value); }
         };
-        _proc.ErrorDataReceived += (_, e) =>
+        proc.ErrorDataReceived += (_, e) =>
         {
             if (!string.IsNullOrEmpty(e.Data)) App.Log("dsh stderr: " + e.Data);
         };
+
+        _ = StartTimeout(20_000, gen);
     }
 
-    private async System.Threading.Tasks.Task StartTimeout(int ms)
+    private async System.Threading.Tasks.Task StartTimeout(int ms, int gen)
     {
         await System.Threading.Tasks.Task.Delay(ms);
-        if (!_urlResolved && !_stopped)
+        // Only act if this is still the current Start() and it never resolved.
+        if (gen == _generation && !_urlResolved && _proc is { HasExited: false })
             Failed?.Invoke("dsh 服务启动超时：20 秒内未收到服务地址，请检查 dsh 是否安装/可用。");
     }
 
-    private bool _stopped = false;
+    private bool _urlResolved;
 
     public void Stop()
     {
-        _stopped = true;
+        _generation++;                           // invalidate in-flight events/timeouts
         if (_proc is { HasExited: false })
         {
             try { _proc.Kill(true); } catch { /* already dead */ }
