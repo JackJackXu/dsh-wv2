@@ -1,0 +1,22 @@
+<Window x:Class="DeepSeekHarness.Desktop.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        Title="DSH WV2"
+        Width="1280" Height="840"
+        MinWidth="900" MinHeight="600"
+        WindowStartupLocation="CenterScreen"
+        Icon="Assets/whale.ico"
+        Background="#1A1A1A"
+        Closing="Window_Closing">
+    <Grid>
+        <wv2:WebView2 x:Name="webView" Visibility="Collapsed" />
+        <Grid x:Name="Overlay" Background="#1A1A1A">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="520">
+                <TextBlock Text="正在启动 DeepSeek Harness…" FontSize="18" Foreground="#CFD8DC" HorizontalAlignment="Center" />
+                <TextBlock x:Name="StatusText" Margin="0,14,0,0" FontSize="12" Foreground="#8FA3AD"
+                           HorizontalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center" />
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>

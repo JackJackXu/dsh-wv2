@@ -1,0 +1,26 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>DSH WV2</AssemblyName>
+    <RootNamespace>DeepSeekHarness.Desktop</RootNamespace>
+    <ApplicationIcon>Assets\whale.ico</ApplicationIcon>
+    <Product>DeepSeek Harness Desktop Client - Powered by C#/WPF on WebView2</Product>
+    <AssemblyTitle>DSH WV2</AssemblyTitle>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4191.47" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\whale.ico" />
+    <Content Include="Assets\whale.ico" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>
