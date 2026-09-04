@@ -91,7 +91,6 @@ public partial class MainWindow : Window
             webView.CoreWebView2.Navigate(url);
             Overlay.Visibility = Visibility.Collapsed;
             webView.Visibility = Visibility.Visible;
-            _ = StartMuxAsync(url);
         });
     }
 

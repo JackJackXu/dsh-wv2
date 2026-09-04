@@ -24,6 +24,7 @@ public partial class MainWindow
         WireHotKey();
         WireWake();
         StartTaskNotifications();
+        WireDomNotifications();
         Closed += (_, _) =>
         {
             UnregisterHotKey();
@@ -222,6 +223,52 @@ public partial class MainWindow
                 : (message.Length > 0 ? message : "有一个问题等待你回答");
             _tray?.ShowBalloonTip(5000, head, body, System.Windows.Forms.ToolTipIcon.Warning);
         });
+    }
+
+    // ----- DOM observation: detect pending approval/question in the page -----
+    private void WireDomNotifications()
+    {
+        try
+        {
+            webView.CoreWebView2.WebMessageReceived += OnWebMessage;
+            string script = @"
+(function(){
+  var KEYS=['需要你的审批','需要你审批','请允许','是否允许','批准','需要你回答','向你提问','等待你回答','有请求需要'];
+  var seen={};
+  setInterval(function(){
+    try{
+      var body=document.body; if(!body) return;
+      var txt=body.innerText||'';
+      var hit=null;
+      for(var i=0;i<KEYS.length;i++){ var k=KEYS[i]; var idx=txt.indexOf(k); if(idx>=0){ hit=txt.slice(Math.max(0,idx-30),idx+k.length+80); break; } }
+      if(hit){
+        var key=hit.slice(0,60);
+        if(!seen[key]){ seen[key]=1; if(window.chrome&&chrome.webview) chrome.webview.postMessage({kind:'attention',text:hit}); }
+      }
+    }catch(e){}
+  },1200);
+})();";
+            webView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(script);
+        }
+        catch (Exception ex) { App.Log("dom notify wiring: " + ex.Message); }
+    }
+
+    private void OnWebMessage(object? sender, Microsoft.Web.WebView2.Core.CoreWebView2WebMessageReceivedEventArgs e)
+    {
+        try
+        {
+            string json = e.TryGetWebMessageAsString() ?? "";
+            App.Log("page-msg: " + json);
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            var r = doc.RootElement;
+            if (r.TryGetProperty("kind", out var k) && k.GetString() == "attention")
+            {
+                string text = r.TryGetProperty("text", out var t) ? t.GetString() ?? "" : "";
+                if (_settings.NotificationsEnabled)
+                    _tray?.ShowBalloonTip(5000, "需要你处理", text, System.Windows.Forms.ToolTipIcon.Warning);
+            }
+        }
+        catch { /* ignore */ }
     }
 
     [DllImport("user32.dll")]
