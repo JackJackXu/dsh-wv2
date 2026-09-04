@@ -3,8 +3,10 @@ using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Forms;
+using System.Windows.Interop;
 using DeepSeekHarness.Desktop.Services;
 using Microsoft.Win32;
 using Microsoft.Web.WebView2.Core;
@@ -260,7 +262,7 @@ public partial class MainWindow : Window
         _tray = new NotifyIcon { Icon = _trayIcon, Visible = true, Text = "DSH WV2" };
         // C: clicking any notification balloon brings the main window forward so
         // the user can see/act on the underlying task or approval.
-        _tray.BalloonTipClicked += (_, _) => Dispatcher.InvokeAsync(ShowMain);
+        _tray.BalloonTipClicked += (_, _) => { App.Log("balloon clicked"); Dispatcher.InvokeAsync(ShowMain); };
         var m = new ContextMenuStrip();
         m.Items.Add("打开主窗口", null, (_, _) => ShowMain());
         m.Items.Add("重新加载 UI", null, (_, _) => Reload());
@@ -352,7 +354,39 @@ public partial class MainWindow : Window
         Show();
         if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
         Activate();
+        ForceForegroundRetry();
     }
+
+    // Windows often refuses a background process the foreground right when it is
+    // activated (e.g. from a tray-balloon click), so Activate() alone may do
+    // nothing. Retry SetForegroundWindow over a short window until it sticks.
+    private void ForceForegroundRetry(int tries = 4)
+    {
+        var h = new WindowInteropHelper(this).Handle;
+        if (h == IntPtr.Zero) return;
+        var t = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(120) };
+        int left = tries;
+        t.Tick += (_, _) =>
+        {
+            try
+            {
+                ShowWindow(h, SW_RESTORE);
+                SetForegroundWindow(h);
+                BringWindowToTop(h);
+            }
+            catch { /* ignore */ }
+            if (--left <= 0) t.Stop();
+        };
+        t.Start();
+    }
+
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
+    [DllImport("user32.dll")]
+    private static extern bool BringWindowToTop(IntPtr hWnd);
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+    private const int SW_RESTORE = 9;
 
     private void ShowLogViewer()
     {
