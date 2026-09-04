@@ -34,6 +34,10 @@ dotnet build -c Release
 dotnet publish -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o ../../release
 ```
 
+## 验收与已知限制
+
+已实测项与因缺少条件未验证/受限项见 **[VERIFICATION.md](VERIFICATION.md)**。
+
 ## 环境要求
 
 - Windows 10/11
