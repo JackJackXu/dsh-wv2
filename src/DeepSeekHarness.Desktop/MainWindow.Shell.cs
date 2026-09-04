@@ -23,6 +23,7 @@ public partial class MainWindow
         WireRecovery(webView.CoreWebView2);
         WireHotKey();
         WireWake();
+        StartTaskNotifications();
         Closed += (_, _) =>
         {
             UnregisterHotKey();
@@ -145,6 +146,31 @@ public partial class MainWindow
             });
         }
         catch (Exception ex) { App.Log("open terminal: " + ex.Message); }
+    }
+
+    private void StartTaskNotifications()
+    {
+        var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".dsh", "sessions");
+        try
+        {
+            _notifWatcher = new Services.SessionWatcher(dir);
+            _notifWatcher.TurnEnd += OnTurnEnd;
+            _notifWatcher.Start();
+            Closed += (_, _) => _notifWatcher?.Stop();
+        }
+        catch (Exception ex) { App.Log("notif watcher: " + ex.Message); }
+    }
+
+    private void OnTurnEnd(string title, string body)
+    {
+        if (!_settings.NotificationsEnabled) return;
+        Dispatcher.InvokeAsync(() =>
+        {
+            // Notify only when the user isn't looking at the window.
+            bool visibleActive = IsVisible && IsActive;
+            if (visibleActive) return;
+            _tray?.ShowBalloonTip(4000, "任务完成：" + title, string.IsNullOrEmpty(body) ? "点击查看" : body, System.Windows.Forms.ToolTipIcon.Info);
+        });
     }
 
     [DllImport("user32.dll")]

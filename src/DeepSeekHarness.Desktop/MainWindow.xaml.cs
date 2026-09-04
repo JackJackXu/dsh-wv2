@@ -21,6 +21,7 @@ public partial class MainWindow : Window
     private bool _webReady;
     private bool _intentionalStop; // suppress exit-notice during manual restart
     private ToolStripMenuItem? _loginItem;
+    private Services.SessionWatcher? _notifWatcher;
     partial void ShellReady();
 
     public MainWindow()
