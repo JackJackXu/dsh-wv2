@@ -14,6 +14,8 @@ public partial class App : System.Windows.Application
     private static readonly string LogDir =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DSH WV2", "logs");
     private static readonly string CrashLog = Path.Combine(LogDir, "error.log");
+    private static readonly string PidFile =
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DSH WV2", "pid");
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -39,6 +41,7 @@ public partial class App : System.Windows.Application
             return;
         }
         StartActivateListener();
+        WritePidLock();
 
         try
         {
@@ -75,13 +78,17 @@ public partial class App : System.Windows.Application
         t.Start();
     }
 
-    internal static void Log(object message)
+    internal static void Log(object message) => Write("[INFO]", message);
+    internal static void LogWarn(object message) => Write("[WARN]", message);
+    internal static void LogError(object message) => Write("[ERROR]", message);
+
+    private static void Write(string level, object message)
     {
         try
         {
             Directory.CreateDirectory(LogDir);
             RotateIfLarge();
-            File.AppendAllText(CrashLog, $"[{DateTime.Now:O}] {message}" + System.Environment.NewLine);
+            File.AppendAllText(CrashLog, $"[{DateTime.Now:O}] {level} {message}" + System.Environment.NewLine);
         }
         catch { /* logging must never throw */ }
     }
@@ -101,6 +108,33 @@ public partial class App : System.Windows.Application
     private static void TryShow(string text)
     {
         try { System.Windows.MessageBox.Show(text, "dsh-wv2", MessageBoxButton.OK, MessageBoxImage.Error); } catch { /* ignore */ }
+    }
+
+    // PID lock: record our PID so a later launch can tell an abnormal prior exit
+    // (stale pid whose process is gone) apart from a normal state. Conservative:
+    // it only cleans a dead-pid marker; port conflicts are already handled by
+    // dsh's own fallback-to-port-0, and orphan cleanup is the Job Object's job.
+    private static void WritePidLock()
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(PidFile)!);
+            if (File.Exists(PidFile)
+                && int.TryParse(File.ReadAllText(PidFile).Trim(), out int oldPid)
+                && oldPid > 0 && !ProcessAlive(oldPid))
+            {
+                Log("startup: removing stale pid lock from dead process " + oldPid);
+                File.Delete(PidFile);
+            }
+            File.WriteAllText(PidFile, Environment.ProcessId.ToString());
+        }
+        catch (Exception ex) { Log("pid lock: " + ex.Message); }
+    }
+
+    private static bool ProcessAlive(int pid)
+    {
+        try { using var p = System.Diagnostics.Process.GetProcessById(pid); return !p.HasExited; }
+        catch { return false; }
     }
 
     protected override void OnExit(ExitEventArgs e)

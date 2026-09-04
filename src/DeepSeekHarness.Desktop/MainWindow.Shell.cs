@@ -1,6 +1,4 @@
 using System.IO;
-using System.Runtime.InteropServices;
-using System.Windows.Interop;
 using Microsoft.Win32;
 using Microsoft.Web.WebView2.Core;
 
@@ -8,26 +6,26 @@ namespace DeepSeekHarness.Desktop;
 
 public partial class MainWindow
 {
-    private const int HotKeyId = 0xD5E1;
-    private const int WmHotkey = 0x0312;
-    private const uint ModAlt = 0x0001;
-    private const uint ModControl = 0x0002;
-    private const uint VkD = 0x44;
-
-    private bool _hotkeyHooked;
     private int _recoveryTries;
     private string _currentUrl = "";
+    // health monitor state (stability: don't rely only on process-alive)
+    private System.Threading.CancellationTokenSource? _healthCts;
+    private bool _hadUrl;
+    private int _healthPort;
+    private int _unreachableCount;
+    private bool _serviceLostHandled;
+    private bool _autoRestarting;
 
     partial void ShellReady()
     {
         WireRecovery(webView.CoreWebView2);
-        WireHotKey();
         WireWake();
         StartTaskNotifications();
+        StartHealthMonitor();
         Closed += (_, _) =>
         {
-            UnregisterHotKey();
             SystemEvents.PowerModeChanged -= OnPowerModeChanged;
+            try { _healthCts?.Cancel(); _healthCts?.Dispose(); _healthCts = null; } catch { /* ignore */ }
         };
     }
 
@@ -83,40 +81,6 @@ public partial class MainWindow
                     try { webView.CoreWebView2.Navigate(_currentUrl); } catch { /* ignore */ }
                 }
             }), System.Threading.Tasks.TaskScheduler.Default);
-    }
-
-    // ---------- global hotkey Ctrl+Alt+D ----------
-    private void WireHotKey()
-    {
-        var handle = new WindowInteropHelper(this).Handle;
-        if (handle == IntPtr.Zero) return;
-        HwndSource.FromHwnd(handle)?.AddHook(WndProc);
-        _hotkeyHooked = RegisterHotKey(handle, HotKeyId, ModControl | ModAlt, VkD);
-        App.Log("hotkey Ctrl+Alt+D registered: " + _hotkeyHooked);
-    }
-
-    private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
-    {
-        if (msg == WmHotkey && wParam.ToInt32() == HotKeyId)
-        {
-            ToggleWindow();
-            handled = true;
-        }
-        return IntPtr.Zero;
-    }
-
-    private void ToggleWindow()
-    {
-        if (IsVisible && WindowState != System.Windows.WindowState.Minimized) Hide();
-        else ShowMain();
-    }
-
-    private void UnregisterHotKey()
-    {
-        if (!_hotkeyHooked) return;
-        var handle = new WindowInteropHelper(this).Handle;
-        if (handle != IntPtr.Zero) UnregisterHotKey(handle, HotKeyId);
-        _hotkeyHooked = false;
     }
 
     // ---------- wake / resume ----------
@@ -175,6 +139,7 @@ public partial class MainWindow
         Dispatcher.InvokeAsync(() =>
         {
             _tray?.ShowBalloonTip(4000, "任务完成：" + title, string.IsNullOrEmpty(body) ? "点击查看" : body, System.Windows.Forms.ToolTipIcon.Info);
+            Flash();
         });
     }
 
@@ -185,11 +150,66 @@ public partial class MainWindow
         {
             string body = reason.Length > 0 ? reason : ("有一个工具请求需要批准");
             _tray?.ShowBalloonTip(6000, "需要你的审批：" + toolName, body, System.Windows.Forms.ToolTipIcon.Warning);
+            Flash();
         });
     }
 
-    [DllImport("user32.dll")]
-    private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
-    [DllImport("user32.dll")]
-    private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
+    // ---------- health check: probe the port, auto-restart with backoff ----------
+    private void StartHealthMonitor()
+    {
+        _healthCts = new System.Threading.CancellationTokenSource();
+        var ct = _healthCts.Token;
+        var t = new System.Threading.Thread(() =>
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                try { System.Threading.Thread.Sleep(15_000); } catch { }
+                if (ct.IsCancellationRequested) break;
+                try { HealthTick(); } catch (Exception ex) { App.Log("health tick: " + ex.Message); }
+            }
+        });
+        t.IsBackground = true;
+        t.Start();
+    }
+
+    private void HealthTick()
+    {
+        if (_quitting || _intentionalStop || _autoRestarting) return;
+        bool running = _dsh.IsRunning;
+
+        // Service was up and vanished on its own -> schedule one auto-restart.
+        if (!running && _hadUrl && !_serviceLostHandled)
+        {
+            _serviceLostHandled = true;
+            App.Log("health: dsh service lost unexpectedly - restarting in 3s");
+            _autoRestarting = true;
+            Dispatcher.InvokeAsync(() => RestartService(() => { _autoRestarting = false; _unreachableCount = 0; }));
+            return;
+        }
+        if (running && _serviceLostHandled) _serviceLostHandled = false;
+
+        // Process is alive but the web port stopped answering -> treat as hung.
+        if (running && _healthPort > 0)
+        {
+            if (PortReachable(_healthPort)) { _unreachableCount = 0; return; }
+            if (++_unreachableCount >= 3)
+            {
+                _unreachableCount = 0;
+                App.Log("health: dsh alive but port " + _healthPort + " unreachable x3 - restarting");
+                _autoRestarting = true;
+                Dispatcher.InvokeAsync(() => RestartService(() => { _autoRestarting = false; }));
+            }
+        }
+    }
+
+    private static bool PortReachable(int port)
+    {
+        try
+        {
+            using var client = new System.Net.Sockets.TcpClient();
+            var task = client.ConnectAsync("127.0.0.1", port);
+            return task.Wait(1500) && client.Connected;
+        }
+        catch { return false; }
+    }
 }
