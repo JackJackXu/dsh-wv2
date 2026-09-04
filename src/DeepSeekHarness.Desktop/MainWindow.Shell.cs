@@ -133,26 +133,18 @@ public partial class MainWindow
 
     private void OnTurnEnd(string title, string body)
     {
-        // Flash is always on (state change); the balloon follows the 通知 switch.
+        // Notify(): balloon when 通知 on, then classic blink after it closes;
+        // classic blink immediately when 通知 off. Always until window focused.
         Dispatcher.InvokeAsync(() =>
-        {
-            Flash();
-            if (_settings.NotificationsEnabled)
-                _tray?.ShowBalloonTip(4000, "任务完成：" + title, string.IsNullOrEmpty(body) ? "点击查看" : body, System.Windows.Forms.ToolTipIcon.Info);
-        });
+            Notify("任务完成：" + title, string.IsNullOrEmpty(body) ? "点击查看" : body, System.Windows.Forms.ToolTipIcon.Info, 4000));
     }
 
     private void OnApprovalAsked(string toolName, string reason)
     {
-        // Flash is always on (state change); the balloon follows the 通知 switch.
         Dispatcher.InvokeAsync(() =>
         {
-            Flash();
-            if (_settings.NotificationsEnabled)
-            {
-                string body = reason.Length > 0 ? reason : ("有一个工具请求需要批准");
-                _tray?.ShowBalloonTip(6000, "需要你的审批：" + toolName, body, System.Windows.Forms.ToolTipIcon.Warning);
-            }
+            string body = reason.Length > 0 ? reason : ("有一个工具请求需要批准");
+            Notify("需要你的审批：" + toolName, body, System.Windows.Forms.ToolTipIcon.Warning, 6000);
         });
     }
 

@@ -20,7 +20,6 @@ public partial class MainWindow : Window
     private readonly DshProcess _dsh = new();
     private NotifyIcon? _tray;
     private Icon? _trayIcon;      // normal (whale)
-    private Icon? _trayAlertIcon; // "attention" variant used while flashing
     private bool _quitting;
     private bool _webReady;
     private bool _intentionalStop; // suppress exit-notice during manual restart
@@ -243,10 +242,8 @@ public partial class MainWindow : Window
             Overlay.Visibility = Visibility.Visible;
             webView.Visibility = Visibility.Collapsed;
             if (ErrorActions is not null) ErrorActions.Visibility = Visibility.Visible;
-            // Flash always; the crash balloon follows the 通知 switch.
-            Flash();
-            if (_settings.NotificationsEnabled)
-                _tray?.ShowBalloonTip(3000, "DSH WV2", "dsh 服务意外退出 (code " + code + ")。点托盘「重启服务」", ToolTipIcon.Warning);
+            // Balloon when 通知 on (then blink after it closes); blink now when off.
+            Notify("DSH WV2", "dsh 服务意外退出 (code " + code + ")。点托盘「重启服务」", ToolTipIcon.Warning, 3000);
         });
     }
 
@@ -257,7 +254,6 @@ public partial class MainWindow : Window
         var iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "whale.ico");
         try { if (File.Exists(iconPath)) icon = new Icon(iconPath); } catch { /* fall through */ }
         _trayIcon = icon ?? SystemIcons.Application;
-        _trayAlertIcon = MakeAlertIcon(_trayIcon);
 
         _tray = new NotifyIcon { Icon = _trayIcon, Visible = true, Text = "DSH WV2" };
         // C: clicking any notification balloon brings the main window forward so
@@ -288,10 +284,9 @@ public partial class MainWindow : Window
     }
 
     // B: whenever something needs the user's attention (task finished, approval
-    // needed, dsh crashed) blink the tray icon WeChat-style — by swapping between
-    // the normal and an "attention" icon (NOT hiding/showing, which would cancel
-    // a visible balloon). One uniform pattern for every kind of state. It keeps
-    // flashing until the window is focused (Activated -> StopFlash).
+    // needed, dsh crashed) blink the tray icon the classic WeChat way — the icon
+    // appears / disappears / appears — continuously until the window is focused
+    // (Activated -> StopFlash). One uniform pattern for every kind of state.
     private void Flash()
     {
         if (_tray is null) return;
@@ -302,38 +297,35 @@ public partial class MainWindow : Window
             _flashTimer = new System.Windows.Forms.Timer { Interval = 450 };
             _flashTimer.Tick += (_, _) => FlashTick();
         }
+        _tray.Visible = true; // always start a flash cycle from "visible"
         if (!_flashTimer.Enabled) _flashTimer.Start();
     }
 
     private void FlashTick()
     {
         if (_tray is null) { StopFlash(); return; }
-        _tray.Icon = ReferenceEquals(_tray.Icon, _trayAlertIcon) ? _trayIcon : _trayAlertIcon;
+        _tray.Visible = !_tray.Visible; // classic appear/disappear blink
     }
 
     private void StopFlash()
     {
         if (_flashTimer is { Enabled: true }) _flashTimer.Stop();
-        if (_tray is not null && _tray.Icon != _trayIcon) _tray.Icon = _trayIcon;
+        if (_tray is not null) _tray.Visible = true; // always end "visible"
     }
 
-    // Build an "attention" whale (a small red badge) used while flashing.
-    private static Icon MakeAlertIcon(Icon baseIcon)
+    // Show a balloon (when 通知 is on) then, once it has had time to be read,
+    // fall back to the classic blink if the window still isn't focused. Hiding
+    // the tray icon during the blink would dismiss a live balloon, so we let the
+    // balloon show first and only blink after it closes. With 通知 off there is
+    // no balloon, so we blink immediately.
+    private void Notify(string title, string text, ToolTipIcon tip, int ms)
     {
-        try
-        {
-            using var bmp = new Bitmap(baseIcon.ToBitmap(), 16, 16);
-            using (var g = System.Drawing.Graphics.FromImage(bmp))
-            using (var brush = new SolidBrush(Color.FromArgb(226, 27, 45)))
-            {
-                g.FillEllipse(brush, 11, 0, 5, 5); // top-right red dot
-            }
-            return System.Drawing.Icon.FromHandle(bmp.GetHicon());
-        }
-        catch
-        {
-            return SystemIcons.Application; // degenerate fallback
-        }
+        StopFlash(); // pause any in-progress blink so it can't kill the balloon
+        if (!_settings.NotificationsEnabled) { Flash(); return; }
+        _tray?.ShowBalloonTip(ms, title, text, tip);
+        var t = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(ms + 250) };
+        t.Tick += (_, _) => { t.Stop(); Flash(); };
+        t.Start();
     }
 
     private void Retry_Click(object sender, RoutedEventArgs e)
