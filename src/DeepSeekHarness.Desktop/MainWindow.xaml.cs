@@ -187,8 +187,15 @@ public partial class MainWindow : Window
     private void Quit()
     {
         _quitting = true;
-        if (_tray is not null) _tray.Visible = false;
-        System.Windows.Application.Current.Shutdown();
+        // Self-contained single-file WPF can crash on graceful Application.Shutdown
+        // (PresentationFramework telemetry fails to load System.Diagnostics.Tracing).
+        // Clean up explicitly, then exit the process directly to bypass that path.
+        try { UnregisterHotKey(); } catch { /* ignore */ }
+        try { SystemEvents.PowerModeChanged -= OnPowerModeChanged; } catch { /* ignore */ }
+        try { _tray?.Dispose(); _tray = null; } catch { /* ignore */ }
+        try { _dsh.Stop(); } catch { /* ignore */ }
+        try { _settings.Save(); } catch { /* ignore */ }
+        Environment.Exit(0);
     }
 
     private void Window_Closing(object? sender, CancelEventArgs e)
