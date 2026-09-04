@@ -15,6 +15,7 @@ public sealed class SessionWatcher
 {
     public event Action<string, string>? TurnEnd; // title, body
     public event Action<string, string>? ApprovalAsked; // toolName, reason
+    public event Action<string, string>? QuestionAsked; // title, body
 
     private const uint ZstdMagic = 4247762216; // 28 B5 2F FD
     private readonly string _sessionsDir;
@@ -302,6 +303,7 @@ public sealed class SessionWatcher
 
         int turnEnds = 0, assistantMessages = 0;
         var approvals = new List<(string tool, string reason)>();
+        var questions = new List<string>();
         long consumed = readFrom;
         foreach (var (s, e) in frames)
         {
@@ -325,19 +327,54 @@ public sealed class SessionWatcher
                     if (et == "turn/end") turnEnds++;
                     if (et == "assistant/message") assistantMessages++;
                     if (et == "approval/asked") approvals.Add((EventField(ev, "toolName") ?? "tool", EventField(ev, "reason") ?? ""));
+                    // dsh asks the user through the ask_user_question tool; its
+                    // call (with the full questions JSON in arguments) is written
+                    // to the log while it is still waiting for an answer.
+                    if (et == "tool/call" && EventField(ev, "name") == "ask_user_question")
+                        questions.Add(SummarizeQuestion(EventField(ev, "arguments")));
                 }
             }
             consumed = readFrom + e;
         }
         rec.Consumed = consumed;
 
-        // New tool approvals needing the user (skip subagent noise).
+        // New approvals / questions needing the user (skip subagent noise).
         if (rec.DelegationDepth == 0)
+        {
             foreach (var (tool, reason) in approvals)
                 ApprovalAsked?.Invoke(tool, reason);
+            foreach (var q in questions)
+                QuestionAsked?.Invoke("dsh 在问你一个问题", q);
+        }
 
         int count = rec.HasTurnEvents ? turnEnds : assistantMessages;
         if (count > 0) Emit(rec, count);
+    }
+
+    // Turn the ask_user_question arguments JSON into a short, human summary.
+    private static string SummarizeQuestion(string? argsJson)
+    {
+        string fallback = "需要你回答一个问题";
+        if (string.IsNullOrEmpty(argsJson)) return fallback;
+        try
+        {
+            using var doc = JsonDocument.Parse(argsJson);
+            if (!doc.RootElement.TryGetProperty("questions", out var qs) || qs.ValueKind != JsonValueKind.Array)
+                return fallback;
+            var list = qs.EnumerateArray().ToList();
+            if (list.Count == 0) return fallback;
+            var first = list[0];
+            string header = Str(first, "header") ?? "";
+            string question = Str(first, "question") ?? "";
+            int options = first.TryGetProperty("options", out var op) && op.ValueKind == JsonValueKind.Array
+                ? op.GetArrayLength() : 0;
+            string text = !string.IsNullOrEmpty(question) ? question : header;
+            if (string.IsNullOrEmpty(text)) text = fallback;
+            if (list.Count > 1) text += "（共" + list.Count + "问）";
+            else if (options > 0) text += "（" + options + " 个选项）";
+            return text.Length > 160 ? text[..160] + "…" : text;
+        }
+        catch { return fallback; }
     }
 
     private void Emit(Rec rec, int count)

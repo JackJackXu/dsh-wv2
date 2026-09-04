@@ -89,4 +89,49 @@ public class SessionWatcherTests
         finally { Directory.Delete(dir, true); }
     }
 
+    [Fact]
+    public void QuestionAsked_triggers_on_ask_user_question_tool_call_once()
+    {
+        var (dir, file) = NewSession();
+        try
+        {
+            var w = new SessionWatcher(dir);
+            var got = new List<string>();
+            w.QuestionAsked += (t, b) => got.Add(t + "|" + b);
+            w.Poll();
+            // A real ask_user_question call: tool/call whose arguments JSON holds
+            // the questions (the same shape verified from real session logs).
+            string row =
+                "{\"type\":\"tool/call\",\"data\":{\"turn\":1,\"step\":0,\"callId\":\"call_1\"," +
+                "\"name\":\"ask_user_question\"," +
+                "\"arguments\":\"{\\\"questions\\\":[{\\\"id\\\":\\\"q1\\\",\\\"header\\\":\\\"\\u4e0b\\u4e00\\u6b65\\\",\\\"question\\\":\\\"\\u7ee7\\u7eed\\u5417\\uff1f\\\",\\\"options\\\":[{\\\"label\\\":\\\"A\\\"}]}]}\"}}\n";
+            AppendFrame(file, row);
+            w.Poll();
+            Assert.Single(got);
+            Assert.Contains("dsh 在问你一个问题", got[0]);
+            Assert.Contains("继续吗", got[0]);
+            // Re-poll must not re-notify the same already-consumed call.
+            w.Poll();
+            Assert.Single(got);
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Fact]
+    public void OtherToolCall_does_not_trigger_question()
+    {
+        var (dir, file) = NewSession();
+        try
+        {
+            var w = new SessionWatcher(dir);
+            int questions = 0;
+            w.QuestionAsked += (_, _) => questions++;
+            w.Poll();
+            AppendFrame(file, "{\"type\":\"tool/call\",\"data\":{\"turn\":1,\"step\":0,\"callId\":\"c\",\"name\":\"Bash\",\"arguments\":\"{}\"}}\n");
+            w.Poll();
+            Assert.Equal(0, questions);
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
 }
