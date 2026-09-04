@@ -47,6 +47,9 @@ dotnet publish -c Release -r win-x64 --self-contained false -p:PublishSingleFile
 
 ## 已知说明
 
+- 公开分发未做数字签名，Windows SmartScreen 可能提示"未知发布者"。
+
+
 - **提问通知未实现**：dsh 的提问走宿主↔UI 内部 RPC，不落盘、无外部干净通道，硬做只能依赖页面 DOM（脆弱），故暂不做。
 - 避免与开发版 web / dsh-lite 同时开（共享 `~/.dsh`）。
 - 会话与数据统一存 `~/.dsh`；壳自身状态在 `%LOCALAPPDATA%\DSH WV2\`。

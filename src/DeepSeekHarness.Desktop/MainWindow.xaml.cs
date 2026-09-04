@@ -108,7 +108,13 @@ public partial class MainWindow : Window
             var env = await CoreWebView2Environment.CreateAsync(null, wv2Data);
             await webView.EnsureCoreWebView2Async(env);
         }
-        catch (Exception ex) { StatusText.Text = "初始化 WebView2 失败：" + ex.Message; App.Log("webview init: " + ex); return; }
+        catch (Exception ex)
+        {
+            StatusText.Text = "初始化 WebView2 失败：" + ex.Message;
+            if (ErrorActions is not null) ErrorActions.Visibility = Visibility.Visible;
+            App.Log("webview init: " + ex);
+            return;
+        }
         ConfigureWebView(webView.CoreWebView2);
         _webReady = true;
         StatusText.Text = "正在拉起 dsh 服务…";
@@ -186,6 +192,8 @@ public partial class MainWindow : Window
         RestartService();
     }
 
+    private void OpenTerminalBtn_Click(object sender, RoutedEventArgs e) => OpenTerminal();
+
     private void OpenLog_Click(object sender, RoutedEventArgs e)
     {
         OpenFolder(Path.Combine(_settingsDir, "logs"));
@@ -205,14 +213,19 @@ public partial class MainWindow : Window
 
     private void RestartService()
     {
-        Dispatcher.InvokeAsync(() =>
+        Dispatcher.InvokeAsync(async () =>
         {
             Overlay.Visibility = Visibility.Visible;
             webView.Visibility = Visibility.Collapsed;
             StatusText.Text = "正在重启 dsh 服务…";
             _intentionalStop = true;
-            _dsh.Stop();
-            _dsh.Start(_settings.LastPort);
+            // Stop() does a process kill + wait; keep it off the UI thread so the
+            // window never freezes for up to 2s.
+            await System.Threading.Tasks.Task.Run(() =>
+            {
+                _dsh.Stop();
+                _dsh.Start(_settings.LastPort);
+            });
         });
     }
 
@@ -299,6 +312,8 @@ public partial class MainWindow : Window
         // No page <-> host messaging bridge is used; keep window.chrome.webview
         // from being exposed at all (strict "no native bridge").
         cwv.Settings.IsWebMessageEnabled = false;
+        try { cwv.Settings.IsGeneralAutofillEnabled = false; } catch { /* older SDK */ }
+        try { cwv.Settings.IsPasswordAutosaveEnabled = false; } catch { /* older SDK */ }
 
         cwv.NavigationStarting += (_, args) =>
         {

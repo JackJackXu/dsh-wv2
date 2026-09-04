@@ -16,5 +16,13 @@
 - 提问（自由问答）通知未实现：dsh 走宿主↔UI 内部 RPC，不落盘、无外部干净通道。
 - 曾尝试 mux WebSocket / DOM 观察两条审批通知路线，后因 dsh 0.1.2 无干净接口而废弃，改用会话日志 `approval/asked`。
 
+### 发布硬化（RC2 复审后）
+- 审批通知读 `approval/asked` 的 `data.*` 字段；端口被占用自动回退 `--port 0`
+- 服务进程用 **Job Object** 绑定，宿主崩溃/强杀即回收 node 树；重启用代次 token 过滤旧事件
+- WebView2 Profile 迁到 `%LOCALAPPDATA%\DSH WV2\WebView2`；关 `IsWebMessageEnabled`/自动填充/密码保存
+- 单实例第二次启动唤醒已有窗口；高 DPI（PerMonitorV2）清单
+- 加载动画、成功后再揭遮罩、失败可操作（重试/日志/终端）、首关托盘提示、About 补 MIT
+- 日志 5MB 轮转；`dotnet test` 3 个 SessionWatcher 单元测试纳入 CI
+
 ### 工程
-- .NET 8，框架依赖单文件发布（~2.5MB），CI build+publish。
+- .NET 8，框架依赖单文件发布（~2.5MB），CI build+test+publish。

@@ -56,7 +56,11 @@ public partial class App : System.Windows.Application
 
     private void StartActivateListener()
     {
-        _activate = new EventWaitHandle(false, EventResetMode.AutoReset, ActivateEventName);
+        try
+        {
+            _activate = new EventWaitHandle(false, EventResetMode.AutoReset, ActivateEventName);
+        }
+        catch (Exception ex) { Log("activate listener: " + ex.Message); return; }
         var t = new System.Threading.Thread(() =>
         {
             while (_activate.WaitOne())
