@@ -52,6 +52,9 @@ public sealed class SessionWatcher
 
     public void Stop() => _cts.Cancel();
 
+    // Manual scan, exposed for tests (Start() drives the same Scan on a timer).
+    public void Poll() => Scan();
+
     // ----- frame scanner (structural) -----
     private static List<(long Start, long End)> ScanZstdFrames(byte[] buf)
     {
