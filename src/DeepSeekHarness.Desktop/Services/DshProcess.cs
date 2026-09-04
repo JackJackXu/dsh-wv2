@@ -154,6 +154,9 @@ public sealed class DshProcess : IDisposable
     {
         try
         {
+            // Release any previous job handle (e.g. after a port-busy retry)
+            // before creating a new one.
+            if (_job != IntPtr.Zero) { try { CloseHandle(_job); } catch { /* ignore */ } _job = IntPtr.Zero; }
             _job = CreateJobObject(IntPtr.Zero, null);
             if (_job == IntPtr.Zero) return;
             var info = new JOBOBJECT_EXTENDED_LIMIT_INFORMATION();

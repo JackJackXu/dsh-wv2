@@ -112,6 +112,9 @@ public partial class MainWindow : Window
         {
             StatusText.Text = "初始化 WebView2 失败：" + ex.Message;
             if (ErrorActions is not null) ErrorActions.Visibility = Visibility.Visible;
+            // "重试启动" only restarts the dsh service; it cannot fix a missing
+            // WebView2 runtime, so hide it here and keep the log/terminal actions.
+            if (RetryBtn is not null) RetryBtn.Visibility = Visibility.Collapsed;
             App.Log("webview init: " + ex);
             return;
         }
