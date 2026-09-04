@@ -24,6 +24,7 @@ public partial class MainWindow : Window
     private bool _webReady;
     private bool _intentionalStop; // suppress exit-notice during manual restart
     private bool _trayHintShown;
+    private bool _wasMaximized; // remember across hide-to-tray so restore keeps max
     private DateTime _lastBoundsSave = DateTime.MinValue;
     private string? _pendingUrl;
     private System.Windows.Forms.Timer? _flashTimer;
@@ -343,8 +344,13 @@ public partial class MainWindow : Window
 
     public void ShowMain()
     {
+        // Restore to whatever state the window was in before it hid to the tray
+        // (maximized stays maximized, normal stays normal). SW_RESTORE elsewhere
+        // must not undo a maximized window, so only adjust via WindowState here.
+        bool wantMax = _wasMaximized;
         Show();
-        if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+        if (WindowState == WindowState.Minimized || (wantMax && WindowState != WindowState.Maximized))
+            WindowState = wantMax ? WindowState.Maximized : WindowState.Normal;
         Activate();
         ForceForegroundRetry();
     }
@@ -352,6 +358,8 @@ public partial class MainWindow : Window
     // Windows often refuses a background process the foreground right when it is
     // activated (e.g. from a tray-balloon click), so Activate() alone may do
     // nothing. Retry SetForegroundWindow over a short window until it sticks.
+    // Deliberately does NOT call ShowWindow(SW_RESTORE): that would un-maximize a
+    // maximized window. ShowMain above already handles the correct WindowState.
     private void ForceForegroundRetry(int tries = 4)
     {
         var h = new WindowInteropHelper(this).Handle;
@@ -362,7 +370,6 @@ public partial class MainWindow : Window
         {
             try
             {
-                ShowWindow(h, SW_RESTORE);
                 SetForegroundWindow(h);
                 BringWindowToTop(h);
             }
@@ -376,9 +383,6 @@ public partial class MainWindow : Window
     private static extern bool SetForegroundWindow(IntPtr hWnd);
     [DllImport("user32.dll")]
     private static extern bool BringWindowToTop(IntPtr hWnd);
-    [DllImport("user32.dll")]
-    private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
-    private const int SW_RESTORE = 9;
 
     private void ShowLogViewer()
     {
@@ -550,6 +554,8 @@ public partial class MainWindow : Window
         CaptureBounds();
         if (_quitting) return;
         e.Cancel = true;
+        // Remember maximized/normal so ShowMain can restore the same state later.
+        _wasMaximized = WindowState == WindowState.Maximized;
         Hide();
         if (!_trayHintShown)
         {
