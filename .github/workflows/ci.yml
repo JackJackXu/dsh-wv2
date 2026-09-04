@@ -17,8 +17,3 @@ jobs:
         run: dotnet build src/DeepSeekHarness.Desktop/DeepSeekHarness.Desktop.csproj -c Release
       - name: Publish single-file
         run: dotnet publish src/DeepSeekHarness.Desktop/DeepSeekHarness.Desktop.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o release
-      - uses: actions/upload-artifact@v5
-        with:
-          name: dsh-wv2-windows
-          path: release/DSH WV2.exe
-          if-no-files-found: error
