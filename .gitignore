@@ -6,6 +6,8 @@ obj/
 
 # Publish / build output
 release/
+release-next/
+
 dist/
 dist-new/
 dist-v3/
