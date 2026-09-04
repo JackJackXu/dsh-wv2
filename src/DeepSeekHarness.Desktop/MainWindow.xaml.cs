@@ -241,8 +241,10 @@ public partial class MainWindow : Window
             Overlay.Visibility = Visibility.Visible;
             webView.Visibility = Visibility.Collapsed;
             if (ErrorActions is not null) ErrorActions.Visibility = Visibility.Visible;
-            _tray?.ShowBalloonTip(3000, "DSH WV2", "dsh 服务意外退出 (code " + code + ")。点托盘「重启服务」", ToolTipIcon.Warning);
+            // Flash always; the crash balloon follows the 通知 switch.
             Flash();
+            if (_settings.NotificationsEnabled)
+                _tray?.ShowBalloonTip(3000, "DSH WV2", "dsh 服务意外退出 (code " + code + ")。点托盘「重启服务」", ToolTipIcon.Warning);
         });
     }
 

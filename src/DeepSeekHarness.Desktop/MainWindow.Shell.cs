@@ -133,24 +133,26 @@ public partial class MainWindow
 
     private void OnTurnEnd(string title, string body)
     {
-        if (!_settings.NotificationsEnabled) return;
-        // Always notify on task completion (front window or not). ShowBalloonTip
-        // must run on the UI thread; OnTurnEnd fires from the watcher thread.
+        // Flash is always on (state change); the balloon follows the 通知 switch.
         Dispatcher.InvokeAsync(() =>
         {
-            _tray?.ShowBalloonTip(4000, "任务完成：" + title, string.IsNullOrEmpty(body) ? "点击查看" : body, System.Windows.Forms.ToolTipIcon.Info);
             Flash();
+            if (_settings.NotificationsEnabled)
+                _tray?.ShowBalloonTip(4000, "任务完成：" + title, string.IsNullOrEmpty(body) ? "点击查看" : body, System.Windows.Forms.ToolTipIcon.Info);
         });
     }
 
     private void OnApprovalAsked(string toolName, string reason)
     {
-        if (!_settings.NotificationsEnabled) return;
+        // Flash is always on (state change); the balloon follows the 通知 switch.
         Dispatcher.InvokeAsync(() =>
         {
-            string body = reason.Length > 0 ? reason : ("有一个工具请求需要批准");
-            _tray?.ShowBalloonTip(6000, "需要你的审批：" + toolName, body, System.Windows.Forms.ToolTipIcon.Warning);
             Flash();
+            if (_settings.NotificationsEnabled)
+            {
+                string body = reason.Length > 0 ? reason : ("有一个工具请求需要批准");
+                _tray?.ShowBalloonTip(6000, "需要你的审批：" + toolName, body, System.Windows.Forms.ToolTipIcon.Warning);
+            }
         });
     }
 
