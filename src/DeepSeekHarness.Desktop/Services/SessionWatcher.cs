@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace DeepSeekHarness.Desktop.Services;
 
@@ -18,6 +19,12 @@ public sealed class SessionWatcher
     public event Action<string, string>? QuestionAsked; // title, body
 
     private const uint ZstdMagic = 4247762216; // 28 B5 2F FD
+    // dsh 0.1.5 (Session format v3) writes generation-addressed names:
+    //   session.jsonl.zstd      -> format v0 (legacy, frozen after migration)
+    //   session.vN.jsonl.zstd   -> format vN (current live log)
+    private static readonly Regex LogNamePattern = new(
+        @"^session(?:\.v(\d+))?\.jsonl\.zstd$",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     private readonly string _sessionsDir;
     private readonly Dictionary<string, Rec> _files = new();
     private readonly CancellationTokenSource _cts = new();
@@ -87,7 +94,7 @@ public sealed class SessionWatcher
             _fsw = new FileSystemWatcher(_sessionsDir)
             {
                 IncludeSubdirectories = true,
-                Filter = "session.jsonl.zstd",
+                Filter = "session*.jsonl.zstd",
                 NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.Size | NotifyFilters.DirectoryName,
             };
             _fsw.Changed += (_, _) => { try { _changed.Set(); } catch { /* ignore */ } };
@@ -216,8 +223,21 @@ public sealed class SessionWatcher
     {
         var outL = new List<string>();
         if (!Directory.Exists(_sessionsDir)) return outL;
-        foreach (var f in Directory.EnumerateFiles(_sessionsDir, "session.jsonl.zstd", SearchOption.AllDirectories))
-            outL.Add(f);
+        // One session directory can hold several immutable format generations
+        // (v0 frozen at session.jsonl.zstd plus session.vN.jsonl.zstd written by
+        // migration/new sessions). Only the highest generation is live; older
+        // ones are frozen history, so picking the max avoids duplicate events.
+        var best = new Dictionary<string, (int Ver, string File)>(StringComparer.OrdinalIgnoreCase);
+        foreach (var f in Directory.EnumerateFiles(_sessionsDir, "*.jsonl.zstd", SearchOption.AllDirectories))
+        {
+            var m = LogNamePattern.Match(Path.GetFileName(f));
+            if (!m.Success) continue;
+            int ver = m.Groups[1].Success && int.TryParse(m.Groups[1].Value, out var v) ? v : 0;
+            var dir = Path.GetDirectoryName(f) ?? "";
+            if (!best.TryGetValue(dir, out var cur) || ver > cur.Ver)
+                best[dir] = (ver, f);
+        }
+        foreach (var b in best.Values) outL.Add(b.File);
         return outL;
     }
 

@@ -22,15 +22,29 @@ public class SessionWatcherTests
         fs.Write(frame, 0, frame.Length);
     }
 
-    private static (string dir, string file) NewSession(string delegationDepth = "0")
+    private static (string dir, string sessionDir) NewSessionDir()
     {
         var dir = Path.Combine(Path.GetTempPath(), "dshwv2test_" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
         var sessionDir = Path.Combine(dir, "session-abc123");
         Directory.CreateDirectory(sessionDir);
-        var file = Path.Combine(sessionDir, "session.jsonl.zstd");
-        var header = "{\"type\":\"session\",\"version\":0,\"id\":\"session-abc123\",\"createdAt\":1,\"cwd\":\"C:\\work\",\"delegationDepth\":" + delegationDepth + ",\"agentPreset\":\"test\"}\n";
+        return (dir, sessionDir);
+    }
+
+    // Write one canonical generation log (session.jsonl.zstd for v0,
+    // session.vN.jsonl.zstd for vN) with a real-shaped v0/v3 header.
+    private static string WriteSession(string sessionDir, string name, int version = 0, string delegationDepth = "0")
+    {
+        var file = Path.Combine(sessionDir, name);
+        var header = "{\"type\":\"session\",\"version\":" + version + ",\"id\":\"session-abc123\",\"createdAt\":1,"
+            + "\"cwd\":\"C:/work\",\"delegationDepth\":" + delegationDepth + ",\"agentPreset\":\"test\",\"isSeeded\":false}\n";
         AppendFrame(file, header);
+        return file;
+    }
+
+    private static (string dir, string file) NewSession(string delegationDepth = "0")
+    {
+        var (dir, sessionDir) = NewSessionDir();
+        var file = WriteSession(sessionDir, "session.jsonl.zstd", 0, delegationDepth);
         return (dir, file);
     }
 
@@ -113,6 +127,49 @@ public class SessionWatcherTests
             // Re-poll must not re-notify the same already-consumed call.
             w.Poll();
             Assert.Single(got);
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Fact]
+    public void V3_generation_filename_is_watched()
+    {
+        // dsh 0.1.5 (Session format v3) writes session.v3.jsonl.zstd.
+        var (dir, sessionDir) = NewSessionDir();
+        try
+        {
+            var file = WriteSession(sessionDir, "session.v3.jsonl.zstd", version: 3);
+            var w = new SessionWatcher(dir);
+            int turn = 0;
+            w.TurnEnd += (_, _) => turn++;
+            w.Poll(); // baseline v3
+            AppendFrame(file, "{\"type\":\"turn/end\",\"data\":{}}\n");
+            w.Poll();
+            Assert.Equal(1, turn);
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Fact]
+    public void Highest_generation_wins_over_frozen_v0()
+    {
+        var (dir, sessionDir) = NewSessionDir();
+        try
+        {
+            var v0 = WriteSession(sessionDir, "session.jsonl.zstd", version: 0);
+            var v3 = WriteSession(sessionDir, "session.v3.jsonl.zstd", version: 3);
+            var w = new SessionWatcher(dir);
+            int turn = 0;
+            w.TurnEnd += (_, _) => turn++;
+            w.Poll(); // selects v3, baselines it
+            // Appends to the frozen v0 must be ignored...
+            AppendFrame(v0, "{\"type\":\"turn/end\",\"data\":{}}\n");
+            w.Poll();
+            Assert.Equal(0, turn);
+            // ...while appends to the live v3 notify.
+            AppendFrame(v3, "{\"type\":\"turn/end\",\"data\":{}}\n");
+            w.Poll();
+            Assert.Equal(1, turn);
         }
         finally { Directory.Delete(dir, true); }
     }

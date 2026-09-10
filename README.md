@@ -6,7 +6,7 @@
 
 ## 状态
 
-**v1.2**：v1.0/1.1 之上补齐 UX/稳定/安全增强 + **提问通知**（无需等 dsh 上游，从会话日志识别 `ask_user_question` 的 `tool/call`）。
+**v1.3**：适配 dsh 0.1.5 的**会话格式 V3**（日志代次命名 `session.vN.jsonl.zstd`），升级 dsh 后任务/审批/提问通知继续可用。v1.2 已含提问通知（从会话日志识别 `ask_user_question` 的 `tool/call`）。
 
 ## 功能
 
