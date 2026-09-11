@@ -504,26 +504,43 @@ public partial class MainWindow : Window
         }
         var ask = System.Windows.MessageBox.Show(
             "发现新版 dsh：\n\n当前：" + local + "\n候选：" + cand.Version + "（" + cand.Tag + "）\n\n" +
-            "是否现在联网升级？\n（命令：npm i -g @deepseek-ai/dsh@" + cand.Version + "）",
+            "升级会先停止 dsh 服务（当前页面会短暂断开，完成后自动重启）。\n\n是否现在联网升级？\n" +
+            "（命令：npm i -g @deepseek-ai/dsh@" + cand.Version + "）",
             "检查 dsh 更新", MessageBoxButton.YesNo, MessageBoxImage.Question);
         if (ask != MessageBoxResult.Yes) return;
 
-        _tray?.ShowBalloonTip(2500, "DSH WV2", "正在升级 dsh 到 " + cand.Version + "…", ToolTipIcon.Info);
-        var res = await System.Threading.Tasks.Task.Run(() => updater.UpdateAsync(cand.Version));
+        _tray?.ShowBalloonTip(2500, "DSH WV2", "正在停止 dsh 服务并升级到 " + cand.Version + "…", ToolTipIcon.Info);
+        // npm must rename the *running* @deepseek-ai/dsh/lib directory out of the
+        // way; Windows refuses while the dsh process holds it (EBUSY / errno
+        // -4082). So stop the service first, and keep the health monitor from
+        // restarting it mid-upgrade.
+        _intentionalStop = true;
+        _autoRestarting = true;
+        var res = new Services.DshUpdater.UpdateResult(false, "", "升级未执行");
+        try
+        {
+            await System.Threading.Tasks.Task.Run(() => _dsh.Stop());
+            res = await System.Threading.Tasks.Task.Run(() => updater.UpdateAsync(cand.Version));
+        }
+        finally
+        {
+            // Always bring the service back up, success or failure.
+            await System.Threading.Tasks.Task.Run(() => _dsh.Start(_settings.LastPort));
+            _intentionalStop = false;
+            _autoRestarting = false;
+        }
         if (!res.Ok)
         {
             string tail = Services.DshUpdater.Tail(res.Output ?? "", 1200);
             string msg = "升级失败：" + (string.IsNullOrEmpty(res.Error) ? "未知错误" : res.Error);
             if (tail.Length > 0) msg += "\n\n—— npm 输出（末尾）——\n" + tail;
-            msg += "\n\n完整输出已写入日志（托盘 → 日志查看器）。";
+            if ((res.Error ?? "").Contains("-4082") || (res.Output ?? "").Contains("EBUSY"))
+                msg += "\n\n提示：升级时文件仍被占用（EBUSY）。请确认没有其它 dsh 进程在运行（例如终端里的 dsh），然后重试。";
+            msg += "\n\ndsh 服务已重新启动；完整输出见日志（托盘 → 日志查看器）。";
             System.Windows.MessageBox.Show(msg, "检查 dsh 更新", MessageBoxButton.OK, MessageBoxImage.Error);
             return;
         }
-        var restart = System.Windows.MessageBox.Show(
-            "dsh 已升级到 " + cand.Version + "。\n\n需要重启 dsh 服务才能生效。是否现在重启？",
-            "检查 dsh 更新", MessageBoxButton.YesNo, MessageBoxImage.Question);
-        if (restart == MessageBoxResult.Yes) RestartService();
-        else _tray?.ShowBalloonTip(3000, "DSH WV2", "dsh 已升级。稍后可点托盘「重启 dsh 服务」生效。", ToolTipIcon.Info);
+        _tray?.ShowBalloonTip(3000, "DSH WV2", "dsh 已升级到 " + cand.Version + " 并重启服务。", ToolTipIcon.Info);
     }
 
     private void Quit()
