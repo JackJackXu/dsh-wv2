@@ -512,8 +512,11 @@ public partial class MainWindow : Window
         var res = await System.Threading.Tasks.Task.Run(() => updater.UpdateAsync(cand.Version));
         if (!res.Ok)
         {
-            System.Windows.MessageBox.Show("升级失败：\n" + (string.IsNullOrEmpty(res.Error) ? res.Output : res.Error),
-                "检查 dsh 更新", MessageBoxButton.OK, MessageBoxImage.Error);
+            string tail = Services.DshUpdater.Tail(res.Output ?? "", 1200);
+            string msg = "升级失败：" + (string.IsNullOrEmpty(res.Error) ? "未知错误" : res.Error);
+            if (tail.Length > 0) msg += "\n\n—— npm 输出（末尾）——\n" + tail;
+            msg += "\n\n完整输出已写入日志（托盘 → 日志查看器）。";
+            System.Windows.MessageBox.Show(msg, "检查 dsh 更新", MessageBoxButton.OK, MessageBoxImage.Error);
             return;
         }
         var restart = System.Windows.MessageBox.Show(

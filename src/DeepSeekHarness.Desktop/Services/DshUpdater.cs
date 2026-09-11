@@ -94,10 +94,15 @@ public sealed class DshUpdater
     {
         string spec = "@deepseek-ai/dsh@" + version;
         string allow = "--allow-scripts=" + AllowScripts;
+        // Dedicated cache: avoids EPERM/antivirus locks on the user's shared
+        // %LOCALAPPDATA%\npm-cache that can make an in-app update fail.
+        string cache = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DSH WV2", "npm-cache");
         string output = "";
         Process? proc = null;
         try
         {
+            Directory.CreateDirectory(cache);
             // Windows: drive npm's plain-JS CLI with node.exe directly to dodge
             // .cmd shell-parsing pitfalls; fall back to bare "npm" otherwise.
             var node = DshProcess.FindNodePath();
@@ -109,23 +114,24 @@ public sealed class DshUpdater
             {
                 psi.FileName = node!;
                 psi.ArgumentList.Add(npmCli);
-                psi.ArgumentList.Add("install");
-                psi.ArgumentList.Add("-g");
-                psi.ArgumentList.Add(spec);
-                psi.ArgumentList.Add(allow);
             }
             else
             {
                 psi.FileName = "npm";
-                psi.ArgumentList.Add("install");
-                psi.ArgumentList.Add("-g");
-                psi.ArgumentList.Add(spec);
-                psi.ArgumentList.Add(allow);
             }
+            psi.ArgumentList.Add("install");
+            psi.ArgumentList.Add("-g");
+            psi.ArgumentList.Add(spec);
+            psi.ArgumentList.Add(allow);
+            psi.ArgumentList.Add("--cache");
+            psi.ArgumentList.Add(cache);
+            psi.ArgumentList.Add("--no-audit");
+            psi.ArgumentList.Add("--no-fund");
             psi.UseShellExecute = false;
             psi.RedirectStandardOutput = true;
             psi.RedirectStandardError = true;
             psi.CreateNoWindow = true;
+            App.Log("dsh update: npm install -g " + spec + " (cache=" + cache + ")");
             proc = Process.Start(psi);
             if (proc is null) return new UpdateResult(false, output, "无法创建 npm 进程");
             proc.OutputDataReceived += (_, e) => { if (!string.IsNullOrEmpty(e.Data)) output += e.Data + "\n"; };
@@ -134,15 +140,26 @@ public sealed class DshUpdater
             proc.BeginErrorReadLine();
             await proc.WaitForExitAsync();
             bool ok = proc.ExitCode == 0;
+            App.Log("dsh update: exit=" + proc.ExitCode + (ok ? " (ok)" : " (failed)")
+                + Environment.NewLine + Tail(output, 4000));
             return new UpdateResult(ok, output, ok ? null : "npm 退出码 " + proc.ExitCode);
         }
         catch (Exception ex)
         {
+            App.Log("dsh update failed: " + ex);
             return new UpdateResult(false, output, ex.Message);
         }
         finally
         {
             if (proc is not null) { try { proc.Dispose(); } catch { /* ignore */ } }
         }
+    }
+
+    /// <summary>Last <paramref name="maxChars"/> characters of npm output (for dialogs/logs).</summary>
+    public static string Tail(string text, int maxChars)
+    {
+        if (string.IsNullOrEmpty(text)) return "";
+        text = text.TrimEnd();
+        return text.Length <= maxChars ? text : "…" + text[^maxChars..];
     }
 }
